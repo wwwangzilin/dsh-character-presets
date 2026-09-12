@@ -1,0 +1,14 @@
+# 情感引擎运行时写的记忆文件（含个人对话痕迹，不应入库）
+.luna-heart.json
+*.luna-heart.json
+
+# 依赖与构建产物
+node_modules/
+dist/
+
+# 编辑器 / 系统杂物
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

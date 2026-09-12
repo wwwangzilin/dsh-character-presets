@@ -1,0 +1,31 @@
+dsh-luna-preset 署名与来源说明
+================================
+
+本仓库包含改编自第三方作品的内容，按 MIT 许可要求署名如下。
+
+1) agent.cordis.yml（agent 平面组合）
+   - 来源：DeepSeek Harness 随附的内置 `standard` agent preset，经同作者（wwwangzilin）
+     的 `nekomode`（猫娘模式）preset 二次改编。
+   - 本仓库的改动：persona 文本替换为「露娜（Luna）」人设；情感工具行指向 ./luna-soul.mjs。
+   - 上游：https://github.com/deepseek-ai/deepseek-harness
+   - 上游许可：MIT License，原始版权归 DeepSeek 及 DeepSeek Harness 贡献者所有。
+
+2) preset.yml
+   - 本仓库原创（预设元信息：名称与描述）。
+
+3) luna-soul.mjs（emotion_sense 六层情感引擎）
+   - 本仓库原创实现，MIT License，版权归 wwwangzilin 所有。
+
+其余未列出的文件均为本仓库原创。
+
+---
+
+Third-party notices (English)
+-----------------------------
+
+`agent.cordis.yml` is adapted from the `standard` agent preset shipped with
+DeepSeek Harness (https://github.com/deepseek-ai/deepseek-harness, MIT License),
+via the author's own `nekomode` preset. The persona text and the emotion-engine
+row are this repository's own work.
+
+`luna-soul.mjs` is an original implementation by wwwangzilin, licensed MIT.
