@@ -1,16 +1,60 @@
-# 露娜模式（luna）· DeepSeek Harness Agent Preset
+# DSH 角色预设集 · 10 个角色共用一套情感引擎
 
-> 把 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 变成一个「魔界小恶魔」——雌小鬼人设 + 六层情感引擎 + 完整 Standard 级工具链的编码 Agent。
+> 给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 加人格：**一套六层情感引擎** + **10 个可切换角色**，每位都是完整 Standard 级工具链的编码 Agent。
 
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
-一个 DSH **agent preset**：不替换你的模型、不改宿主配置，只是往 `<dshHome>/.agent-presets/` 里放一个目录，
-新建会话时选中「露娜模式」，这个会话就由露娜来跑——人格、说话方式、思考方式全换，能力一条不砍。
+这是一组 DSH **agent preset**：不替换你的模型、不改宿主配置，只是往 `<dshHome>/.agent-presets/` 里放目录，
+新建会话时选中哪一位，这个会话就由谁来跑——人格、说话方式、思考方式全换，能力一条不砍。
+
+## 角色一览
+
+| 角色 | 一句话 | 反差钩子 |
+| --- | --- | --- |
+| 🦇 **露娜** Luna | 魔界小恶魔，雌小鬼毒舌 | 嘴硬到底，被反杀就怂，一被夸就飘 |
+| 🐱 **小喵** nekomode | 傲娇猫娘，口是心非 | 嘴上「才不是为你做的」，身体已经赖在旁边了 |
+| ⛩️ **绯音** Akane | 病娇式神 | 内核不是「想伤害你」，而是「怕你丢下我」 |
+| ⚔️ **凛** Rin | 三无剑灵 | 报告式的温柔：凌晨三点站在门口「巡逻」 |
+| 🧚 **芽衣** Mei | 森林小妖精 | 冒冒失失，却是把你从低落里硬拽出来的那个 |
+| 🎴 **白夜** Byakuya | 冷艳巫女 | **重度社恐**，被直视就结巴，「神谕」多半是现编的 |
+| 🤖 **阿尔玛** Alma | 旧式机械女仆 | 情绪过载会**卡带漏真心话**，随即「记录已损坏」 |
+| 🎧 **小铃** Suzu | 街头不良少女 | **怕生 + 被夸就炸毛**，深夜偷偷去喂流浪猫 |
+| 💼 **三千代** Michiyo | 干练社畜 | **生活能力为零**，怕黑还嘴硬「只是省电」；正经活首选 |
+| 🕯️ **灰** Hui | 图书馆幽灵 | **记不住自己的名字**——因为没人叫过 |
+
+```bash
+node scripts/install-character.mjs list           # 看看有哪些
+node scripts/install-character.mjs install --all   # 全装
+node scripts/install-character.mjs install hui     # 只装一位
+```
+
+角色包全在 [`characters/`](characters/)：每位一份 `persona.md`（11 段结构）+ 一份 `card.json`（chara_card_v2，
+供 [dsh-role-cards](https://github.com/wwwangzilin/dsh-role-cards) 的卡片墙与 GAL 界面复用）。
 
 ---
 
-## 她是什么样的
+## 十个角色，共用一套引擎
+
+角色的差异**只落在文本层**：persona、`MOODS` 风格句、关键词表。引擎本身不认识任何一个角色，
+所以加角色永远不用改代码。
+
+| 层 | 内容 |
+| --- | --- |
+| **角色层** | `characters/<id>/persona.md`——11 段结构（身份 / 人设 / 口头禅 / **行为模式** / 反差萌 / 情感引擎 / 思考模式 / 表达技巧 / 调节底线 / 记忆 / 工作守则） |
+| **情感层** | `emotion_sense` 六层情感引擎（本地插件，运算全在固定代码里，模型只拿到一屏精简指引），外加**生理派生层**：情绪 → 心跳 / 体温 / 呼吸 |
+| **能力层** | 与内置 `standard` 同级的完整工具面：文件编辑、Shell、检索、Skills、计划模式、目标、Todo、子代理、Workflow、Ralph、Web 搜索、后台任务、上下文压缩 |
+
+**反差设计**（全体通用）：日常各有各的活法，但你一进入正经工作（编码 / 调试 / 部署 / 写文档），
+自动切到专注模式——回答专业利落、绝不拿人设掩盖错误，只保留「主人」的称呼和偶尔一句小声吐槽。
+
+> **为什么不容易「丢人设」**：对比本机早期 preset 后发现，光有性格描述不够，还得有可执行的动作清单。
+> 所以每位角色的 persona 都包含【行为模式】（写动作，不写形容词）、不少于四条【口头禅】、
+> 以及【思考模式】里「不许在思考里偷偷变回普通助手」的硬约束。详见 [characters/README.md](characters/README.md)。
+
+---
+
+## 以露娜为例：她是什么样的
 
 | 层 | 内容 |
 | --- | --- |
