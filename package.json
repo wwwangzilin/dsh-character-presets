@@ -1,5 +1,5 @@
 {
-  "name": "dsh-luna-preset",
+  "name": "dsh-character-presets",
   "version": "1.0.0",
   "description": "露娜模式 —— DeepSeek Harness 的雌小鬼 agent preset（小恶魔人设 + 六层情感引擎，能力等同内置 standard）",
   "type": "module",
@@ -7,7 +7,7 @@
     "test": "node --test"
   },
   "bin": {
-    "dsh-luna-preset": "bin/install.mjs"
+    "dsh-character-presets": "bin/install.mjs"
   },
   "files": [
     "bin/",
@@ -31,7 +31,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wwwangzilin/dsh-luna-preset.git"
+    "url": "git+https://github.com/wwwangzilin/dsh-character-presets.git"
   },
   "engines": {
     "node": ">=18"

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # 露娜模式 · 一键安装
 #
-# 把 dsh-luna-preset 装进 DeepSeek Harness 的 agent-presets 目录。
+# 把 dsh-character-presets 装进 DeepSeek Harness 的 agent-presets 目录。
 #
-#   curl -fsSL https://raw.githubusercontent.com/wwwangzilin/dsh-luna-preset/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/wwwangzilin/dsh-character-presets/main/install.sh | bash
 #   # 或
 #   ./install.sh
 #
@@ -14,7 +14,7 @@
 #   LUNA_REF          分支 / tag（默认 main）
 set -euo pipefail
 
-REPO="${LUNA_REPO:-https://github.com/wwwangzilin/dsh-luna-preset.git}"
+REPO="${LUNA_REPO:-https://github.com/wwwangzilin/dsh-character-presets.git}"
 REF="${LUNA_REF:-main}"
 DSH_HOME_DIR="${DSH_HOME:-$HOME/.dsh}"
 PRESETS_DIR="${DSH_PRESETS_DIR:-$DSH_HOME_DIR/.agent-presets}"

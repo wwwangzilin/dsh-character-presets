@@ -1,6 +1,6 @@
 # 露娜规则包（luna-rules）
 
-> 从 [dsh-luna-preset](https://github.com/wwwangzilin/dsh-luna-preset) 导出的**独立规则片段**。
+> 从 [dsh-character-presets](https://github.com/wwwangzilin/dsh-character-presets) 导出的**独立规则片段**。
 >
 > 可直接追加到你的 `AGENTS.md` / 项目规则里，也可以和其他规则包组合。
 > **不含人设与情感引擎**——要完整体验需要完整预设。

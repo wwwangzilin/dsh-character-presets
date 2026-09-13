@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // 露娜模式 · npx 安装入口
 //
-//   npx github:wwwangzilin/dsh-luna-preset
-//   npx github:wwwangzilin/dsh-luna-preset --ref dev --dir /custom/presets
+//   npx github:wwwangzilin/dsh-character-presets
+//   npx github:wwwangzilin/dsh-character-presets --ref dev --dir /custom/presets
 //
 // 跨平台（Windows / macOS / Linux），只依赖 git 与 node。
 // 逻辑与 install.sh / install.ps1 一致：装到 <presets>/luna，已存在则更新。
@@ -12,7 +12,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, basename } from 'node:path'
 
-const REPO = process.env.LUNA_REPO || 'https://github.com/wwwangzilin/dsh-luna-preset.git'
+const REPO = process.env.LUNA_REPO || 'https://github.com/wwwangzilin/dsh-character-presets.git'
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`)

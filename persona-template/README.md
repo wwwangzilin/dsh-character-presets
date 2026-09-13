@@ -9,7 +9,7 @@
 
 ```bash
 # 1. 复制仓库，目录名 = 你的 preset id（DSH 用目录名当 id）
-cp -r dsh-luna-preset ~/.dsh/.agent-presets/<你的角色id>
+cp -r dsh-character-presets ~/.dsh/.agent-presets/<你的角色id>
 
 # 2. 写人设：把 persona.md 填好，注入 agent.cordis.yml
 cd ~/.dsh/.agent-presets/<你的角色id>
@@ -45,4 +45,4 @@ $EDITOR preset.yml             # name / description 换成新角色
 ## 发布
 
 也欢迎把你的角色作为独立仓库发布，README 里注明「引擎来自
-[dsh-luna-preset](https://github.com/wwwangzilin/dsh-luna-preset)」即可。
+[dsh-character-presets](https://github.com/wwwangzilin/dsh-character-presets)」即可。

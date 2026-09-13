@@ -1,6 +1,6 @@
 # Luna preset installer for Windows (PowerShell).
 #
-#   irm https://raw.githubusercontent.com/wwwangzilin/dsh-luna-preset/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/wwwangzilin/dsh-character-presets/main/install.ps1 | iex
 #   # or
 #   .\install.ps1
 #
@@ -15,7 +15,7 @@
 
 $ErrorActionPreference = 'Stop'
 
-$Repo = if ($env:LUNA_REPO) { $env:LUNA_REPO } else { 'https://github.com/wwwangzilin/dsh-luna-preset.git' }
+$Repo = if ($env:LUNA_REPO) { $env:LUNA_REPO } else { 'https://github.com/wwwangzilin/dsh-character-presets.git' }
 $Ref = if ($env:LUNA_REF) { $env:LUNA_REF } else { 'main' }
 $DshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $env:USERPROFILE '.dsh' }
 $PresetsDir = if ($env:DSH_PRESETS_DIR) { $env:DSH_PRESETS_DIR } else { Join-Path $DshHome '.agent-presets' }

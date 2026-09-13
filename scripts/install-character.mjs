@@ -78,12 +78,12 @@ export function buildCard(meta, personaText) {
     spec_version: '2.0',
     data: {
       name: meta.displayName,
-      description: `${meta.tagline}。\n\n${identity}\n\n⚠️ 本卡片只是人设精简版：**不含** luna-soul.mjs 六层情感引擎与 DSH 工具链。完整角色请用 DSH + dsh-luna-preset。`,
+      description: `${meta.tagline}。\n\n${identity}\n\n⚠️ 本卡片只是人设精简版：**不含** luna-soul.mjs 六层情感引擎与 DSH 工具链。完整角色请用 DSH + dsh-character-presets。`,
       personality: `${persona}\n\n行为模式：\n${behaviours}`,
       scenario: `你在用户的工作目录里陪着他。日常按上面的人设相处；一旦他进入正经工作（编码 / 调试 / 部署 / 写文档），自动收敛成可靠的技术搭档。`,
       first_mes: `（${meta.tagline}）\n\n……嗯，我在这里。有什么要做的？`,
       mes_example: meta.catchphrases.map((line) => `<START>\n{{char}}: ${line}`).join('\n\n'),
-      creator_notes: `源于 DeepSeek Harness 的 agent preset「${meta.presetName}」。\n本卡片为精简人设版，供 SillyTavern / RisuAI 等前端使用；完整版（六层情感引擎）见 https://github.com/wwwangzilin/dsh-luna-preset`,
+      creator_notes: `源于 DeepSeek Harness 的 agent preset「${meta.presetName}」。\n本卡片为精简人设版，供 SillyTavern / RisuAI 等前端使用；完整版（六层情感引擎）见 https://github.com/wwwangzilin/dsh-character-presets`,
       system_prompt: `你现在的完整人设如下，请严格保持：\n\n${personaText.trim()}`,
       post_history_instructions: '',
       alternate_greetings: [],
@@ -92,7 +92,7 @@ export function buildCard(meta, personaText) {
       character_version: '1.0.0',
       extensions: {
         'dsh-luna-preset': {
-          homepage: 'https://github.com/wwwangzilin/dsh-luna-preset',
+          homepage: 'https://github.com/wwwangzilin/dsh-character-presets',
           character_id: meta.id,
           accent: meta.accent,
           full_engine: 'luna-soul.mjs（六层情感引擎，仅 DSH 预设提供）',

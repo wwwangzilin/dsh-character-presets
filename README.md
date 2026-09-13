@@ -134,17 +134,17 @@ node scripts/install-character.mjs install hui     # 只装一位
 **一行命令（推荐）**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wwwangzilin/dsh-luna-preset/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/wwwangzilin/dsh-character-presets/main/install.sh | bash
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/wwwangzilin/dsh-luna-preset/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/wwwangzilin/dsh-character-presets/main/install.ps1 | iex
 ```
 
 跨平台（需要 node）：
 
 ```bash
-npx github:wwwangzilin/dsh-luna-preset
+npx github:wwwangzilin/dsh-character-presets
 ```
 
 脚本会把仓库装到 `<dshHome>/.agent-presets/luna`（已装过则更新）→ 校验关键文件 → 提示重启。
@@ -162,13 +162,13 @@ npx github:wwwangzilin/dsh-luna-preset
 #### macOS / Linux
 
 ```bash
-git clone https://github.com/wwwangzilin/dsh-luna-preset.git ~/.dsh/.agent-presets/luna
+git clone https://github.com/wwwangzilin/dsh-character-presets.git ~/.dsh/.agent-presets/luna
 ```
 
 #### Windows（PowerShell）
 
 ```powershell
-git clone https://github.com/wwwangzilin/dsh-luna-preset.git "$env:USERPROFILE\.dsh\.agent-presets\luna"
+git clone https://github.com/wwwangzilin/dsh-character-presets.git "$env:USERPROFILE\.dsh\.agent-presets\luna"
 ```
 
 #### 不想用 git
@@ -183,7 +183,7 @@ git clone https://github.com/wwwangzilin/dsh-luna-preset.git "$env:USERPROFILE\.
 ## 文件结构
 
 ```text
-dsh-luna-preset/
+dsh-character-presets/
 ├── preset.yml            # 预设元信息：选择器里显示的名称与描述
 ├── agent.cordis.yml      # agent 平面组合：人设、情感工具、工具面、子代理、压缩、计划模式
 ├── luna-soul.mjs         # emotion_sense 六层情感引擎（标准 Cordis 插件，apply 内 ctx.tools.register）

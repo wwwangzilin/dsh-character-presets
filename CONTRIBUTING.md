@@ -13,7 +13,7 @@
 ## 本地跑起来
 
 ```bash
-git clone https://github.com/wwwangzilin/dsh-luna-preset.git ~/.dsh/.agent-presets/luna
+git clone https://github.com/wwwangzilin/dsh-character-presets.git ~/.dsh/.agent-presets/luna
 # 重启 DSH → 新建会话时选「露娜模式」
 ```
 
@@ -59,7 +59,7 @@ git clone https://github.com/wwwangzilin/dsh-luna-preset.git ~/.dsh/.agent-prese
 4. 改 `luna-soul.mjs` 里 `MOODS` 的风格与示例句、关键词表（可选）
 5. 目录名就是 preset id，必须与 `preset.yml` 的名字对应
 
-> 也欢迎把新角色作为独立仓库发布，README 里注明「引擎来自 dsh-luna-preset」即可。
+> 也欢迎把新角色作为独立仓库发布，README 里注明「引擎来自 dsh-character-presets」即可。
 
 ## 不接受的改动
 
