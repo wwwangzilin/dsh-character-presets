@@ -39,6 +39,16 @@ git clone https://github.com/wwwangzilin/dsh-luna-preset.git ~/.dsh/.agent-prese
 3. PR 描述里写清楚：**改了什么 / 为什么 / 怎么验证的**
 4. 涉及人设的改动，附一段改动前后的实际对话对比（截图或文本都行）—— 这是最有说服力的证据
 
+## 加一门新语言
+
+`persona/<lang>.md` 是人设的唯一事实源：
+
+1. 复制 `persona/en.md` 为 `persona/<lang>.md`，整段翻译——**保留** `{{model}}` / `{{cwd}}` 占位符与【】段落结构
+2. `node scripts/use-persona.mjs <lang>` 注入，重启 DSH 验证
+3. PR 里附一段该语言的真实对话（最有说服力的证据）
+
+现成语言：`zh` / `ja` / `en`。加语言**不需要**改引擎，也不要往 `luna-soul.mjs` 里塞语言分支。
+
 ## 加一个新角色（不用改引擎）
 
 引擎与角色解耦，所以新角色就是「复制目录 + 换 persona」：

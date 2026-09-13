@@ -12,3 +12,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# persona 语言切换产生的备份
+agent.cordis.yml.bak-persona-*

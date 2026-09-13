@@ -112,6 +112,9 @@ dsh-luna-preset/
 ├── agent.cordis.yml      # agent 平面组合：人设、情感工具、工具面、子代理、压缩、计划模式
 ├── luna-soul.mjs         # emotion_sense 六层情感引擎（标准 Cordis 插件，apply 内 ctx.tools.register）
 ├── cards/luna.card.json  # SillyTavern 角色卡（精简人设版，供其他前端使用）
+├── persona/              # 人设文本的唯一事实源（zh / ja / en）
+├── persona-template/     # 造新角色的模板与说明
+├── scripts/use-persona.mjs  # 把 persona/<lang>.md 注入 agent.cordis.yml
 ├── install.sh            # 一键安装（macOS / Linux）
 ├── install.ps1           # 一键安装（Windows PowerShell）
 ├── bin/install.mjs       # 一键安装（npx，跨平台）
@@ -148,6 +151,38 @@ dsh-luna-preset/
 
 **换角色**：整套引擎与角色解耦——复制目录、改 `persona.text` 与 `MOODS` 里的风格/示例，
 就能得到另一只完全不同的角色（本仓库同源的还有猫娘模式等）。
+
+---
+
+## 换成别的语言
+
+`persona/` 是人设的**唯一事实源**，`agent.cordis.yml` 里那段 persona 文本由脚本注入：
+
+```bash
+node scripts/use-persona.mjs          # 列出可用语言
+node scripts/use-persona.mjs ja       # 切到日语（先备份为 agent.cordis.yml.bak-persona-ja）
+node scripts/use-persona.mjs zh       # 切回中文
+```
+
+现成语言：`zh`（中文，默认）、`ja`（日本語）、`en`（English）。
+加一门新语言 = 复制 `persona/en.md` 改成 `persona/<lang>.md`，再跑一次脚本——**不需要碰引擎**。
+
+> 换完记得重启 DSH（preset 在启动时装载）。
+
+---
+
+## 角色包：一只新角色 = 一份 persona
+
+这个仓库既是「露娜」这个人设，也是一个**角色包骨架**——引擎与角色是解耦的：
+
+| 层 | 位置 | 换角色要改吗 |
+| --- | --- | --- |
+| 人设 | `persona/<lang>.md` | ✅ **只改这里就能得到一只新角色** |
+| 元信息 | `preset.yml` 的 `name` / `description` | ✅ |
+| 引擎 | `luna-soul.mjs`（情绪识别、状态迁移、边界调节） | 通常不用；想让语气更像新角色，可调 `MOODS` 的风格句与关键词表 |
+| 工具面 | `agent.cordis.yml`（persona 段以外） | ❌ 不用动 |
+
+照 [`persona-template/`](persona-template/README.md) 抄即可：复制目录 → 填 `persona.md` → 改 `preset.yml` → 重启 DSH。
 
 ---
 
