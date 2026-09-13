@@ -112,6 +112,7 @@ dsh-luna-preset/
 ├── agent.cordis.yml      # agent 平面组合：人设、情感工具、工具面、子代理、压缩、计划模式
 ├── luna-soul.mjs         # emotion_sense 六层情感引擎（标准 Cordis 插件，apply 内 ctx.tools.register）
 ├── cards/luna.card.json  # SillyTavern 角色卡（精简人设版，供其他前端使用）
+├── rules/luna-rules.md   # 可独立导出的规则包（可追加进 AGENTS.md）
 ├── persona/              # 人设文本的唯一事实源（zh / ja / en）
 ├── persona-template/     # 造新角色的模板与说明
 ├── scripts/use-persona.mjs  # 把 persona/<lang>.md 注入 agent.cordis.yml
@@ -202,6 +203,23 @@ node scripts/use-persona.mjs zh       # 切回中文
 在别的平台她会「像露娜」，但不会**持续积累**成露娜——想要完整体验仍需 DSH + 本预设。
 
 导入：SillyTavern → 角色 → 导入 → 选 `cards/luna.card.json`。
+
+---
+
+## 与 DSH 生态集成
+
+露娜**不强制依赖任何外部项目**——没装也照常工作。以下是三条可选的集成路径：
+
+| 集成对象 | 方式 | 状态 |
+| --- | --- | --- |
+| 角色卡生态（`dsh-agent-rp` / `DSH-RolePlay` / SillyTavern / RisuAI） | `cards/luna.card.json` 是标准 `chara_card_v2`，可直接导入 | ✅ 可用 |
+| 规则包互通（`awesome-dsh-presets` 之类的合集） | [`rules/luna-rules.md`](rules/luna-rules.md)：独立规则片段，可追加进 `AGENTS.md` 或与其他规则包组合 | ✅ 可用 |
+| 情感引擎复用（其他角色预设 / 未来的情绪后端） | `luna-soul.mjs` 是标准 Cordis 插件，与「露娜」人设解耦：复制它 + 换 `MOODS` 的风格句与关键词表，就能给别的角色用 | ✅ 可用 |
+
+**可选性**：以上都不影响基础功能——删掉 `cards/` 或 `rules/` 目录，预设照常运行。
+
+> 长期方向：若 Murmur 一类的情绪后端成熟，可以把状态层交给它、露娜只负责表达。
+> 接口尚未实现，但引擎的分层（感知 → 理解 → 状态 → 表达 → 调节 → 记忆）就是为此准备的。
 
 ---
 
