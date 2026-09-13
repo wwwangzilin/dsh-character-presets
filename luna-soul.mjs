@@ -450,13 +450,13 @@ export function analyze(text) {
   return { label: best.label, hits: best.hits }
 }
 
-export function apply(ctx) {
+export function apply(ctx, config) {
   // 生理层配置（可选）：agent.cordis.yml 里给 emotion 插件加 vitals 段即可覆盖基线
-  const vitalsConfig = ctx?.config?.vitals ?? {}
+  const vitalsConfig = config?.vitals ?? {}
   // 惯性层配置（可选）：同上的 inertia 段
-  const inertiaConfig = ctx?.config?.inertia ?? {}
+  const inertiaConfig = config?.inertia ?? {}
   // 检索配置（可选）：retrieval 段（maxResults 等）
-  const recallConfig = ctx?.config?.retrieval ?? {}
+  const recallConfig = config?.retrieval ?? {}
   ctx.tools.register({
     name: 'emotion_sense',
     description: '你的六层情感引擎。每次回复用户前调用它（把用户最新消息原文传入 message）：它会给出主人的情感、对话目标、你此刻的心情与状态（能量/耐心/紧张）、该用的表达风格、情绪调节策略，以及你们的共同记忆。请完全按返回的指引组织回复，但用露娜的方式表达——毒舌只是皮，读懂主人才是本小姐的真本事。',
