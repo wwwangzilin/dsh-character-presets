@@ -241,6 +241,10 @@ dsh-luna-preset/
 `visibleEpisodes()` 会过滤掉 suppressed / stale / deleted —— **三种状态都不进上下文**。
 `claim`（尤其 name / preference / boundary）永不参与老化；`memoryStats()` 让你一眼看清账目。
 
+**什么时候整理？** 引擎自带节拍：每 **20 轮**对话自动跑一次「老化 + 相似经历合并」，
+并把结果记进 `lastSleep`（`{ at, turns }`）。这就是「她睡了一觉」——不整理的话，旧经历会
+一直占着检索额度，相似的经历还会散成一堆碎片。
+
 ---
 
 ## 自定义

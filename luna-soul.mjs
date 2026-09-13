@@ -26,6 +26,7 @@ import {
 } from './luna-memory.mjs'
 import { ingest } from './luna-gate.mjs'
 import { retrieve, formatRecall } from './luna-recall.mjs'
+import { ageMemories, mergeStaleEpisodes } from './luna-forget.mjs'
 
 export const name = 'tool-emotion'
 
@@ -458,6 +459,18 @@ async function remember(ctx, state, perception, memory) {
 
   memory.runtimeState.stage = stageFrom(memory)
   memory.updatedAt = now.toISOString()
+
+  // 睡眠整合：每 20 轮做一次记忆老化 + 相似 episode 合并。记忆系统不能只写不整理——
+  // 「她睡了一觉」在工程上就是这个节拍；不整理的话旧记忆会一直占着检索额度，
+  // 相似的经历也会散成一堆碎片。
+  const turns = Number(memory.runtimeState.turns ?? 0) + 1
+  memory.runtimeState.turns = turns
+  if (turns % 20 === 0) {
+    ageMemories(memory, now)
+    mergeStaleEpisodes(memory)
+    memory.lastSleep = { at: now.toISOString(), turns }
+  }
+
   await saveMemory(ctx, memory)
 }
 

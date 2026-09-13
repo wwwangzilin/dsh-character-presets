@@ -137,6 +137,21 @@ test('跨会话：重启后从磁盘读回记忆（露娜真的记得主人）',
   )
 })
 
+test('睡眠整合按节拍触发（每 20 轮老化 + 合并一次）', async () => {
+  const { ctx, tools, files } = makeCtx()
+  apply(ctx)
+  const tool = tools[0]
+  const exec = { agent: { id: 'agent-sleep' } }
+
+  for (let i = 1; i <= 19; i += 1) await tool.execute({ message: `第 ${i} 轮` }, exec)
+  assert.equal(JSON.parse(files.get(WORKSPACE_MEMORY)).lastSleep, undefined, '19 轮还不该整合')
+
+  await tool.execute({ message: '第 20 轮' }, exec)
+  const mem = JSON.parse(files.get(WORKSPACE_MEMORY))
+  assert.ok(mem.lastSleep, '第 20 轮应触发睡眠整合')
+  assert.equal(mem.lastSleep.turns, 20)
+})
+
 test('第二轮状态延续（生理层与惯性层跨轮，不是每轮重置）', async () => {
   const { ctx, tools } = makeCtx()
   apply(ctx)
