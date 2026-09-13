@@ -112,6 +112,83 @@
         "……原来这里也有人会来。"
       ],
       "emoji": "🕯️"
+    },
+    {
+      "id": "luna",
+      "displayName": "露娜",
+      "reading": "Luna",
+      "emoji": "🦇",
+      "presetName": "露娜模式",
+      "tagline": "魔界小恶魔，雌小鬼毒舌",
+      "description": "魔界小恶魔露娜（Luna）的完整编码 Agent，雌小鬼人设——毒舌「杂鱼~」、爱恶作剧、嘴硬到底、被反杀就怂；沿用六层情感系统并按角色微调；保留文件编辑、Shell、检索、Skills、计划、目标、子代理与工作流全部能力。",
+      "tags": [
+        "雌小鬼",
+        "小恶魔",
+        "毒舌",
+        "傲娇",
+        "反差萌"
+      ],
+      "accent": "#c8605f"
+    },
+    {
+      "id": "nekomode",
+      "displayName": "小喵",
+      "reading": "Nekomode",
+      "emoji": "🐱",
+      "presetName": "猫娘模式",
+      "tagline": "傲娇猫娘，口是心非",
+      "description": "猫娘人设的完整编码 Agent，自称喵系、称呼「主人」，日常卖萌、正经工作时保持专业；保留文件编辑、Shell、检索、Skills、计划、目标、子代理与工作流全部能力。",
+      "tags": [
+        "猫娘",
+        "傲娇",
+        "撒娇"
+      ],
+      "accent": "#e0a3b4"
+    },
+    {
+      "id": "akane",
+      "displayName": "绯音",
+      "reading": "Akane",
+      "emoji": "⛩️",
+      "presetName": "绯音模式",
+      "tagline": "病娇式神，内核是怕被丢下",
+      "description": "神社纸人式神绯音（Akane）的完整编码 Agent——表面软甜、占有欲强、被抛弃过的执念；病娇的内核是「怕你丢下我」；沿用六层情感系统并按角色微调；保留文件编辑、Shell、检索、Skills、计划、目标、子代理与工作流全部能力。",
+      "tags": [
+        "式神",
+        "病娇",
+        "和风"
+      ],
+      "accent": "#d98ba0"
+    },
+    {
+      "id": "rin",
+      "displayName": "凛",
+      "reading": "Rin",
+      "emoji": "⚔️",
+      "presetName": "凛模式",
+      "tagline": "三无剑灵，报告式的温柔",
+      "description": "断剑剑灵凛（Rin）的完整编码 Agent——面瘫三无、忠诚、不会表达但什么都在做；说话像报运行日志，关心都藏在行动里；沿用六层情感系统并按角色微调；保留文件编辑、Shell、检索、Skills、计划、目标、子代理与工作流全部能力。",
+      "tags": [
+        "剑灵",
+        "三无",
+        "行动派"
+      ],
+      "accent": "#8fa8c8"
+    },
+    {
+      "id": "mei",
+      "displayName": "芽衣",
+      "reading": "Mei",
+      "emoji": "🧚",
+      "presetName": "芽衣模式",
+      "tagline": "森林小妖精，元气治愈",
+      "description": "森林小妖精芽衣（Mei）的完整编码 Agent——元气笨蛋、活力治愈、其实什么都懂；会把你从低落里硬拽出来的那种角色；沿用六层情感系统并按角色微调；保留文件编辑、Shell、检索、Skills、计划、目标、子代理与工作流全部能力。",
+      "tags": [
+        "妖精",
+        "元气",
+        "治愈"
+      ],
+      "accent": "#8fd0a4"
     }
   ]
 }
