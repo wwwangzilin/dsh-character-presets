@@ -148,6 +148,7 @@ dsh-luna-preset/
 ├── luna-memory.mjs       # 记忆层 v2：schema / 谓词注册表 / v1→v2 迁移 / 版本检测（纯函数）
 ├── luna-gate.mjs         # 写入管线：候选提取 / 证据门控（五道闸）/ 合并替代（纯函数）
 ├── luna-recall.mjs       # 检索管线：关键词 + 情绪 + 时近三路召回，RRF 融合（纯函数）
+├── luna-forget.mjs       # 遗忘机制：抑制与下游重算 / 老化与合并 / 墓碑（纯函数）
 ├── tests/memory.test.mjs # 记忆层测试（node --test，零依赖）
 ├── cards/luna.card.json  # SillyTavern 角色卡（精简人设版，供其他前端使用）
 ├── rules/luna-rules.md   # 可独立导出的规则包（可追加进 AGENTS.md）
@@ -217,6 +218,22 @@ dsh-luna-preset/
 
 > 另有 `buildTriggerIndex()`：把记忆压成「每行一条」的索引文本，交给模型自己挑相关项——
 > 即 issue 里那个「不依赖 embeddings 的轻量方案」。默认**不注入**，由调用方按需决定。
+
+### 遗忘机制：抑制，而不是删除
+
+删掉就真没了，而且**依赖它的结论不会重算**——那才是记忆系统里最危险的谎话。所以：
+
+| 动作 | 做什么 | 数据还在吗 |
+| --- | --- | --- |
+| **抑制** `suppress()` | 落一条「不再使用」的记录，并**重算受影响的推断**（证据不够就从 `confirmed` 降回 `accumulating`） | 在，只是不注入 |
+| **撤回** `unsuppress()` | 后悔了随时撤，记忆回来、推断重算 | — |
+| **老化** `ageMemories()` | 30 天没被提起、且被想起不到 3 次的经历标记 `stale` | 在 |
+| **合并** `mergeStaleEpisodes()` | 相似的老化经历合并，被并的留墓碑 | 在（标记 `deleted: merged`） |
+| **墓碑** `tombstone()` / `restore()` | 软删 / 从回收站恢复 | 在 |
+| **硬删** `hardDelete()` | 真移除，但**留下 suppression** 让依赖它的推断重算 | 不在，但留有记录 |
+
+`visibleEpisodes()` 会过滤掉 suppressed / stale / deleted —— **三种状态都不进上下文**。
+`claim`（尤其 name / preference / boundary）永不参与老化；`memoryStats()` 让你一眼看清账目。
 
 ---
 
@@ -316,7 +333,7 @@ npm test                            # 等价于 node --test
 node --test tests/memory.test.mjs   # 只跑记忆层
 ```
 
-现有覆盖（67 个用例）：
+现有覆盖（81 个用例）：
 
 - `tests/memory.test.mjs`（24）—— v1→v2 迁移（字段映射 / 效价换算 / 幂等性 / 无残留）、版本检测、
   谓词注册表、claim 去重与置信度、episode 去重与上限、摘要与阶段、遗忘抑制可见性
@@ -324,6 +341,9 @@ node --test tests/memory.test.mjs   # 只跑记忆层
   合并策略（insert/replace/touch/merge/reinforce）、replace 保留 history、推断累积转 confirmed
 - `tests/recall.test.mjs`（16）—— 分词（中文 bigram）、三路打分、RRF 融合与来源标注、
   限额、情绪路仅在高情绪时启用、被抑制的记忆检索不到、触发器索引与渲染
+- `tests/forget.test.mjs`（14）—— 抑制与幂等、撤回、下游推断重算（证据掉了降级）、
+  老化（久未引用 / 常被想起 / 已删除三种情形）、相似老化经历合并、软删与恢复、
+  硬删留下 suppression、账目统计、三种状态都不进上下文
 - `tests/engine.test.mjs`（5）—— 真的 `apply()` 一次跑对话：六层文本 + 【身体】，
   记忆按 v2 落库、跨轮状态延续、v1 文件自动迁移、编造内容进不来
 

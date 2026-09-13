@@ -315,9 +315,14 @@ export function isSuppressed(memory, id) {
   return (memory?.suppressions ?? []).some((s) => s.targetId === id)
 }
 
-/** 过滤掉被抑制的 episodes（检索与注入都必须走这个）。 */
+/**
+ * 过滤掉不该再注入的 episodes：被抑制的、以及已老化 / 已墓碑的。
+ * 老化与墓碑都不真删——数据留在文件里，只是不再进上下文。
+ */
 export function visibleEpisodes(memory) {
-  return (memory?.episodes ?? []).filter((ep) => !isSuppressed(memory, ep.id))
+  return (memory?.episodes ?? []).filter(
+    (ep) => !isSuppressed(memory, ep.id) && ep.status !== 'deleted' && ep.status !== 'stale',
+  )
 }
 
 /** 过滤掉被抑制的 claims。 */
