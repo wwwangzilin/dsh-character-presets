@@ -506,7 +506,9 @@ export function apply(ctx) {
           lines.push(`【理解】他想要：${v.need}；最不想听：${v.avoid}${v.attribution ? `；线索：${v.attribution}` : ''}`)
         }
         if (v.mood !== undefined) {
-          lines.push(`【状态】你此刻：${v.mood}｜能量 ${v.energy} 耐心 ${v.patience} 兴趣 ${v.interest} 紧张 ${v.tension}`)
+          // 状态值是浮点运算出来的，注入前取整——给模型看「耐心 82」，不是「耐心 82.3688」
+          const n = (x) => Math.round(Number(x ?? 0))
+          lines.push(`【状态】你此刻：${v.mood}｜能量 ${n(v.energy)} 耐心 ${n(v.patience)} 兴趣 ${n(v.interest)} 紧张 ${n(v.tension)}`)
         }
         if (v.style !== undefined) {
           lines.push(`【表达】${v.style}`)

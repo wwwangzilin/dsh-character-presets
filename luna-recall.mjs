@@ -86,6 +86,14 @@ export function scoreRecency(item, nowMs, halfLifeDays = RECALL_DEFAULTS.recency
   return Math.pow(0.5, days / halfLifeDays)
 }
 
+/** episode 的检索文本：evidence 已经包含 summary 时不重复拼接。 */
+function episodeText(ep) {
+  const summary = String(ep?.summary ?? '')
+  const evidence = (ep?.evidence ?? []).join(' ')
+  if (!summary) return evidence
+  return evidence.includes(summary) ? evidence : `${summary} ${evidence}`
+}
+
 /** 把三类记忆统一成可检索的条目。 */
 export function collectItems(memory) {
   const items = []
@@ -99,7 +107,7 @@ export function collectItems(memory) {
   for (const e of visibleEpisodes(memory)) {
     items.push({
       id: e.id, kind: 'episode',
-      text: `${e.summary} ${(e.evidence ?? []).join(' ')}`,
+      text: episodeText(e),
       valence: Number(e.valence ?? 0), createdAt: e.lastSeenAt ?? e.createdAt, raw: e,
     })
   }
