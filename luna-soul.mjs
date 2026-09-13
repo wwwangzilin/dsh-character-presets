@@ -23,6 +23,7 @@ import {
   createMemory, emptyMemory, stageFromMemory, summarize,
 } from './luna-memory.mjs'
 import { ingest } from './luna-gate.mjs'
+import { retrieve, formatRecall } from './luna-recall.mjs'
 
 export const name = 'tool-emotion'
 
@@ -454,6 +455,8 @@ export function apply(ctx) {
   const vitalsConfig = ctx?.config?.vitals ?? {}
   // 惯性层配置（可选）：同上的 inertia 段
   const inertiaConfig = ctx?.config?.inertia ?? {}
+  // 检索配置（可选）：retrieval 段（maxResults 等）
+  const recallConfig = ctx?.config?.retrieval ?? {}
   ctx.tools.register({
     name: 'emotion_sense',
     description: '你的六层情感引擎。每次回复用户前调用它（把用户最新消息原文传入 message）：它会给出主人的情感、对话目标、你此刻的心情与状态（能量/耐心/紧张）、该用的表达风格、情绪调节策略，以及你们的共同记忆。请完全按返回的指引组织回复，但用露娜的方式表达——毒舌只是皮，读懂主人才是本小姐的真本事。',
@@ -490,6 +493,7 @@ export function apply(ctx) {
           memory: { type: 'string', description: '与主人的共同记忆摘要' },
           vitals: { type: 'string', description: '你此刻的身体事实（心率/体温/呼吸），只作事实参考，如何反应由你决定' },
           inertia: { type: 'string', description: '时间维度与人格一致性的状态事实（专注触发/毒舌预算/傲娇累积/久别），同样只作参考，为空表示无特别提示' },
+          recall: { type: 'string', description: '与当前话题相关的记忆（混合检索结果，一行一条并标注召回来源），为空表示没想起相关的' },
         },
       },
       render(_args, value) {
@@ -516,6 +520,9 @@ export function apply(ctx) {
         }
         if (v.inertia) {
           lines.push(`【惯性】${v.inertia}`)
+        }
+        if (v.recall) {
+          lines.push(`【回忆】相关记忆：\n${v.recall}`)
         }
         if (v.memory) {
           lines.push(`【记忆】${v.memory}`)
@@ -565,6 +572,10 @@ export function apply(ctx) {
       state.lastSeenMs = Date.now()
       const inertiaText = inertiaHint({ focus, sharp, praise, absence })
 
+      // ── 检索层：把相关记忆想起来（混合检索 + RRF，只报告）──
+      const recalled = retrieve(text, memory, state, recallConfig)
+      const recallText = formatRecall(recalled)
+
       // ── 理解层 ──
       const understanding = understand(explicit.label, goal.goal, text)
 
@@ -597,6 +608,7 @@ export function apply(ctx) {
         memory: recallSummary(memory),
         vitals: vitalsText,
         inertia: inertiaText,
+        recall: recallText,
       }
     },
   })

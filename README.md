@@ -147,6 +147,7 @@ dsh-luna-preset/
 ├── luna-inertia.mjs      # 情感惯性：基线回归 / 缺席规则 / 毒舌预算 / 傲娇累积（纯函数）
 ├── luna-memory.mjs       # 记忆层 v2：schema / 谓词注册表 / v1→v2 迁移 / 版本检测（纯函数）
 ├── luna-gate.mjs         # 写入管线：候选提取 / 证据门控（五道闸）/ 合并替代（纯函数）
+├── luna-recall.mjs       # 检索管线：关键词 + 情绪 + 时近三路召回，RRF 融合（纯函数）
 ├── tests/memory.test.mjs # 记忆层测试（node --test，零依赖）
 ├── cards/luna.card.json  # SillyTavern 角色卡（精简人设版，供其他前端使用）
 ├── rules/luna-rules.md   # 可独立导出的规则包（可追加进 AGENTS.md）
@@ -199,6 +200,23 @@ dsh-luna-preset/
 
 合并策略也随类型不同：同谓词的新值**替代**旧值（旧值进 `history`，不直接抹掉）、
 相似经历合并并计数、推断同 pattern 强化——证据累积到 3 条才从 `accumulating` 转为 `confirmed`。
+
+### 检索管线：把相关的想起来
+
+不是把所有记忆塞进上下文，而是按需召回——结果恒定 ≤ `maxResults` 条，
+**注入成本不随记忆增长**：
+
+| 路 | 打分方式 | 何时启用 |
+| --- | --- | --- |
+| 关键词 | 中英混合分词后的命中率（中文切 bigram，正是 FTS5 失效的地方） | 始终 |
+| 情绪 | `1 − |效价差| / 2`，情绪同频的经历优先 | 紧张度 ≥ 0.7 时 |
+| 时近 | 半衰期衰减（默认 14 天） | 始终 |
+
+三路结果用 **RRF（倒数排名融合，k=60）** 合并，再按类型加权（稳定事实 > 一次经历），最后截断。
+被 `suppressions` 抑制的记忆**检索不到**。
+
+> 另有 `buildTriggerIndex()`：把记忆压成「每行一条」的索引文本，交给模型自己挑相关项——
+> 即 issue 里那个「不依赖 embeddings 的轻量方案」。默认**不注入**，由调用方按需决定。
 
 ---
 
@@ -298,12 +316,14 @@ npm test                            # 等价于 node --test
 node --test tests/memory.test.mjs   # 只跑记忆层
 ```
 
-现有覆盖（51 个用例）：
+现有覆盖（67 个用例）：
 
 - `tests/memory.test.mjs`（24）—— v1→v2 迁移（字段映射 / 效价换算 / 幂等性 / 无残留）、版本检测、
   谓词注册表、claim 去重与置信度、episode 去重与上限、摘要与阶段、遗忘抑制可见性
 - `tests/gate.test.mjs`（22）—— 五道闸的**各种拒绝场景**、来源分类、候选提取、相似度、
   合并策略（insert/replace/touch/merge/reinforce）、replace 保留 history、推断累积转 confirmed
+- `tests/recall.test.mjs`（16）—— 分词（中文 bigram）、三路打分、RRF 融合与来源标注、
+  限额、情绪路仅在高情绪时启用、被抑制的记忆检索不到、触发器索引与渲染
 - `tests/engine.test.mjs`（5）—— 真的 `apply()` 一次跑对话：六层文本 + 【身体】，
   记忆按 v2 落库、跨轮状态延续、v1 文件自动迁移、编造内容进不来
 
