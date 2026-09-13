@@ -10,9 +10,11 @@
  * 5. 调节层   — 降火/陪伴/稳定/边界策略，AI 不被用户情绪带崩
  * 6. 记忆层   — 用户画像、共同经历、关系阶段，经 fs 持久化跨会话
  *
- * 标准 Cordis 插件：inject 声明依赖 tools/fs，apply 内 ctx.tools.register。
+ * 标准 Cordis 插件：inject 声明依赖 tools/fs/sandboxPolicy，apply 内 ctx.tools.register。
  * 不发布任何服务，无需 realm；preset 卸载时注册自动移除。
  */
+
+import { homedir } from 'node:os'
 
 /** Cordis plugin name used by loader diagnostics. */
 import { deriveAndSmooth, describeVitals } from './luna-vitals.mjs'
@@ -27,8 +29,14 @@ import { retrieve, formatRecall } from './luna-recall.mjs'
 
 export const name = 'tool-emotion'
 
-/** 工具注册需要 tools 注册表；记忆层需要 fs 持久化。 */
-export const inject = ['tools', 'fs']
+/**
+ * 工具注册需要 tools；记忆持久化需要 fs。
+ *
+ * `sandboxPolicy` 必须显式 inject：cordis 里访问未声明的服务会抛错，而它的
+ * `workspaceRoot` 正是沙箱内唯一稳可写的位置。漏了它，记忆定位会静默失败
+ * （见 memoryFileTarget 里的历史教训）。
+ */
+export const inject = ['tools', 'fs', 'sandboxPolicy']
 
 /* ============================== 感知层 ============================== */
 
@@ -339,7 +347,15 @@ export function __resetHeartMemory() {
   heartMemory = null
 }
 
-/** 定位记忆文件：优先工作区根（会话沙箱可写边界内），失败退回 DSH home。 */
+/**
+ * 定位记忆文件：优先工作区根（会话沙箱可写边界内），失败退回 DSH home。
+ *
+ * 历史教训：早期版本这里拿 `ctx.get('dshHome')` 当第二个候选，但 **dshHome 并不是
+ * cordis 服务**（0.1.5-rc.2 里它只是 agent-instructions 的配置字段），而 inject 里又
+ * 漏了 `sandboxPolicy` —— 两个候选全部抛错并被 catch 吞掉，记忆因此从未落盘过。
+ * 现在：服务候选只认真实存在的 sandboxPolicy，home 从环境变量 / 家目录推导，定位结果
+ * 也不再静默（见 __persist）。
+ */
 async function memoryFileTarget(ctx) {
   const candidates = []
   try {
@@ -347,13 +363,16 @@ async function memoryFileTarget(ctx) {
     if (policy !== undefined && typeof policy.workspaceRoot === 'string' && policy.workspaceRoot.length > 0) {
       candidates.push(policy.workspaceRoot.replace(/[\\/]+$/, '') + '/' + MEMORY_FILE)
     }
-  } catch { /* 无工作区根时忽略 */ }
-  try {
-    const home = ctx.get('dshHome')
-    if (home !== undefined && typeof home === 'string' && home.length > 0) {
-      candidates.push(home.replace(/[\\/]+$/, '') + '/' + MEMORY_FILE)
-    }
-  } catch { /* 无 dshHome 服务时忽略 */ }
+  } catch { /* 未 inject 或未提供策略时忽略该候选 */ }
+
+  let home = typeof process.env.DSH_HOME === 'string' ? process.env.DSH_HOME : ''
+  if (home.length === 0) {
+    try { home = homedir() + '/.dsh' } catch { home = '' }
+  }
+  if (home.length > 0) {
+    candidates.push(home.replace(/[\\/]+$/, '') + '/' + MEMORY_FILE)
+  }
+
   for (const raw of candidates) {
     try {
       const target = await ctx.fs.resolve(raw)
@@ -386,18 +405,32 @@ async function loadMemory(ctx) {
     } catch { /* 首次运行或文件损坏，用空记忆 */ }
   }
   memory.__location = location
+  // 迁移标记是持久字段：__persist 只是运行时状态，会被下一次 saveMemory 覆盖掉。
+  if (migrated) memory.migratedFrom = 'v1'
   heartMemory = memory
-  if (migrated) await saveMemory(ctx, memory)
+  // 首次加载即落盘：记忆文件立刻存在（不再出现「装了插件却从没写过档」），
+  // 同时让 __persist 反映真实的写入结果。
+  await saveMemory(ctx, memory)
   return memory
 }
 
+/**
+ * 落盘。`ctx.fs.writeText` 本身是原子发布（先写临时文件再替换），无需额外防半截文件。
+ * 写失败不致命 —— 进程内记忆照常生效 —— 但必须留下痕迹，绝不再静默。
+ */
 async function saveMemory(ctx, memory) {
   const location = memory.__location
-  if (location === undefined) return
+  if (location === undefined) {
+    memory.__persist = { ok: false, error: 'no writable location（记忆无法落盘）' }
+    return
+  }
   try {
-    const { __location, ...plain } = memory
+    const { __location, __persist, ...plain } = memory
     await ctx.fs.writeText(location.target, JSON.stringify(plain, null, 2))
-  } catch { /* 写失败不致命：进程内记忆仍生效 */ }
+    memory.__persist = { ok: true, path: MEMORY_FILE, savedAt: new Date().toISOString() }
+  } catch (error) {
+    memory.__persist = { ok: false, path: MEMORY_FILE, error: String(error?.message ?? error) }
+  }
 }
 
 /** 更新记忆（v2）：亲密度、共同经历、称呼主张。 */
@@ -428,9 +461,18 @@ async function remember(ctx, state, perception, memory) {
   await saveMemory(ctx, memory)
 }
 
-/** 提炼给模型的记忆摘要（委托 v2 模块，保持精简）。 */
+/**
+ * 提炼给模型的记忆摘要（委托 v2 模块，保持精简）。
+ * 末尾附一行持久化状态：记忆到底存没存下去，模型与主人当场就能看见，不必去翻日志。
+ */
 function recallSummary(memory) {
-  return summarize(memory)
+  const base = summarize(memory)
+  const persist = memory.__persist
+  if (persist === undefined) return base
+  const badge = persist.ok
+    ? `持久化 ✓ ${persist.path}${memory.migratedFrom ? `（已从 ${memory.migratedFrom} 迁移）` : ''}`
+    : `持久化 ✗ ${persist.error ?? '未知原因'}`
+  return `${base}｜${badge}`
 }
 
 /* ============================== 工具注册 ============================== */
