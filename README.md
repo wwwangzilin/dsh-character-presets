@@ -145,6 +145,8 @@ dsh-luna-preset/
 ├── luna-soul.mjs         # emotion_sense 六层情感引擎（标准 Cordis 插件，apply 内 ctx.tools.register）
 ├── luna-vitals.mjs       # 生理层：情绪 → 心跳/体温/呼吸（纯函数，可单独测试）
 ├── luna-inertia.mjs      # 情感惯性：基线回归 / 缺席规则 / 毒舌预算 / 傲娇累积（纯函数）
+├── luna-memory.mjs       # 记忆层 v2：schema / 谓词注册表 / v1→v2 迁移 / 版本检测（纯函数）
+├── tests/memory.test.mjs # 记忆层测试（node --test，零依赖）
 ├── cards/luna.card.json  # SillyTavern 角色卡（精简人设版，供其他前端使用）
 ├── rules/luna-rules.md   # 可独立导出的规则包（可追加进 AGENTS.md）
 ├── persona/              # 人设文本的唯一事实源（zh / ja / en）
@@ -162,12 +164,23 @@ dsh-luna-preset/
 
 ---
 
-## 记忆文件
+## 记忆文件（schema v2）
 
 情感引擎的记忆层会写一个 `.luna-heart.json`：
 
 - 位置：优先**当前会话工作区根目录**（在沙箱可写边界内），失败则回退到 `<dshHome>/.luna-heart.json`
-- 内容：用户画像（昵称 / 偏好 / 观察）、关系阶段与亲密度、最近 20 条共同经历
+- 结构（v2）：
+
+| 字段 | 内容 |
+| --- | --- |
+| `claims` | 稳定事实（称呼 / 职业 / 语言 / 偏好 / 边界 / 时区）——由**谓词注册表**限制可写字段，模型塞不进任意键 |
+| `episodes` | 共同经历（带效价与唤醒度，并保留原文证据） |
+| `inferences` | 慢速推断（要累积证据，不是一次就下结论） |
+| `runtimeState` | 当前状态（关系阶段、亲密度）——临时状态，带过期时间 |
+| `suppressions` | 遗忘抑制：**遗忘不是删除**，被抑制的条目不注入，依赖它的推断重算 |
+
+- **自动迁移**：检测到 v1（旧的 `profile` / `experiences` 结构）会就地升级，
+  并先把原文备份为 `.luna-heart.v1.bak.json` —— **不原地丢数据**
 - **删除即重置关系**（她会在下次对话里重新认识你）
 - 已加入 `.gitignore`：这是你的私人聊天痕迹，不会被提交
 
@@ -182,6 +195,7 @@ dsh-luna-preset/
 | 情绪关键词表 | `luna-soul.mjs` 的 `EXPLICIT_RULES` / `HIDDEN_MARKERS` |
 | 情绪 → 心情的迁移概率 | `luna-soul.mjs` 的 `nextMood` |
 | 调节与边界话术 | `luna-soul.mjs` 的 `regulate` / `understand` 的 `needTable` |
+| 记忆可写字段 | `luna-memory.mjs` 的 `PREDICATE_REGISTRY`（谓词注册表） |
 | 生理层基线 | `luna-vitals.mjs` 的 `VITALS_DEFAULTS`（静息 72 / 36.5℃ / 16 次） |
 | 惯性 / 毒舌预算 / 傲娇阈值 | `luna-inertia.mjs` 的 `INERTIA_DEFAULTS`，或 `agent.cordis.yml` 的 `inertia` 段 |
 | 工具面 | `agent.cordis.yml` 里增删行（例如把 `disabled: true` 的 `subagent_codex` 打开） |
@@ -256,6 +270,20 @@ node scripts/use-persona.mjs zh       # 切回中文
 
 > 长期方向：若 Murmur 一类的情绪后端成熟，可以把状态层交给它、露娜只负责表达。
 > 接口尚未实现，但引擎的分层（感知 → 理解 → 状态 → 表达 → 调节 → 记忆）就是为此准备的。
+
+---
+
+## 测试
+
+引擎全是纯函数模块，测试**零依赖**（只用 node 内置的 `node:test`）：
+
+```bash
+npm test                            # 等价于 node --test
+node --test tests/memory.test.mjs   # 只跑记忆层
+```
+
+现有覆盖：v1→v2 迁移（字段映射 / 效价换算 / 幂等性 / 无残留字段）、版本检测（v2 直通、未知版本回退空）、
+谓词注册表校验、claim 去重与置信度提升、episode 去重与上限、摘要与关系阶段推进、遗忘抑制的可见性。
 
 ---
 

@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "露娜模式 —— DeepSeek Harness 的雌小鬼 agent preset（小恶魔人设 + 六层情感引擎，能力等同内置 standard）",
   "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
   "bin": {
     "dsh-luna-preset": "bin/install.mjs"
   },

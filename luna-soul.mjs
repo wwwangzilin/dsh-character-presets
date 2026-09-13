@@ -19,6 +19,9 @@ import { deriveAndSmooth, describeVitals } from './luna-vitals.mjs'
 import {
   regressToBaseline, applyAbsence, noteSharpness, notePraise, detectFocus, inertiaHint,
 } from './luna-inertia.mjs'
+import {
+  createMemory, emptyMemory, appendClaim, appendEpisode, stageFromMemory, summarize, SOURCES,
+} from './luna-memory.mjs'
 
 export const name = 'tool-emotion'
 
@@ -85,13 +88,9 @@ export function detectGoal(text, explicit) {
   return { goal: '闲聊', note: '日常互动，轻松回应' }
 }
 
-/** 关系阶段：从记忆层推（陌生/熟客/长期）。 */
+/** 关系阶段：委托 v2 记忆模块（阶段名与 v1 保持一致）。 */
 function stageFrom(memory) {
-  const count = memory?.experiences?.length ?? 0
-  const closeness = memory?.relationship?.closeness ?? 0
-  if (closeness >= 60 || count >= 15) return '长期主人'
-  if (count >= 5 || closeness >= 30) return '熟客'
-  return '新客'
+  return stageFromMemory(memory)
 }
 
 /* ============================== 理解层 ============================== */
@@ -322,12 +321,8 @@ export function regulate(explicit, text) {
 
 /** 记忆结构：用户画像 / 共同经历 / 关系阶段。 */
 const MEMORY_FILE = '.luna-heart.json'
-const MEMORY_DEFAULTS = () => ({
-  version: 1,
-  profile: { nickname: null, preferences: [], observations: [] },
-  relationship: { stage: '新客', closeness: 0 },
-  experiences: [],
-})
+/** v1 备份文件名：迁移前先留一份，绝不原地丢数据。 */
+const MEMORY_BACKUP = '.luna-heart.v1.bak.json'
 
 // 全局记忆缓存（一个主人一份，跨会话共享）；WeakMap 会按 agent 隔离导致互相覆盖。
 let heartMemory = null
@@ -359,16 +354,28 @@ async function memoryFileTarget(ctx) {
 async function loadMemory(ctx) {
   if (heartMemory !== null) return heartMemory
   const location = await memoryFileTarget(ctx)
-  let memory = MEMORY_DEFAULTS()
+  let memory = emptyMemory()
+  let migrated = false
   if (location !== undefined) {
     try {
       const text = await ctx.fs.readText(location.target)
       const parsed = JSON.parse(text)
-      if (parsed && typeof parsed === 'object') memory = { ...MEMORY_DEFAULTS(), ...parsed }
-    } catch { /* 首次运行或文件损坏，用默认 */ }
+      const result = createMemory(parsed)
+      memory = result.memory
+      migrated = result.migrated
+      if (migrated) {
+        // 迁移前先把 v1 原文备份下来
+        try {
+          const backupRaw = location.raw.replace(/[^\\/]+$/, MEMORY_BACKUP)
+          const backupTarget = await ctx.fs.resolve(backupRaw)
+          await ctx.fs.writeText(backupTarget, JSON.stringify(parsed, null, 2))
+        } catch { /* 备份失败不阻塞迁移 */ }
+      }
+    } catch { /* 首次运行或文件损坏，用空记忆 */ }
   }
   memory.__location = location
   heartMemory = memory
+  if (migrated) await saveMemory(ctx, memory)
   return memory
 }
 
@@ -381,43 +388,49 @@ async function saveMemory(ctx, memory) {
   } catch { /* 写失败不致命：进程内记忆仍生效 */ }
 }
 
-/** 更新记忆：画像、经历、亲密度。 */
+/** 更新记忆（v2）：亲密度、共同经历、称呼主张。 */
 async function remember(ctx, state, perception, memory) {
+  const now = new Date()
+
   // 亲密度：正向互动上升，负向微降，封顶 100
   const delta = perception.explicit === '生气' || perception.explicit === '难过' ? -1 : +2
-  memory.relationship.closeness = Math.max(0, Math.min(100, (memory.relationship.closeness ?? 0) + delta))
-  memory.relationship.stage = stageFrom(memory)
+  const closeness = Number(memory.runtimeState?.closeness ?? 0)
+  memory.runtimeState = {
+    ...(memory.runtimeState ?? {}),
+    closeness: Math.max(0, Math.min(100, closeness + delta)),
+  }
 
-  // 共同经历：追加最近一次（去重、限量）
+  // 共同经历 → episode（带原文证据，供后续门控与检索使用）
   const topic = String(perception.text ?? '').replace(/\s+/g, ' ').slice(0, 24)
   if (topic.length > 0) {
-    const today = new Date().toISOString().slice(0, 10)
-    const entry = { date: today, topic, emotion: perception.explicit }
-    const head = memory.experiences?.[0]
-    if (!head || !(head.topic === topic && head.date === today)) {
-      memory.experiences = [entry, ...(memory.experiences ?? [])].slice(0, 20)
-    }
+    appendEpisode(memory, {
+      summary: topic,
+      emotion: perception.explicit,
+      evidence: String(perception.text ?? '').slice(0, 120),
+      now,
+    })
   }
 
-  // 用户画像：昵称线索
-  if (perception.nickname && memory.profile.nickname === null) {
-    memory.profile.nickname = perception.nickname
+  // 称呼线索 → claim(name)
+  if (perception.nickname) {
+    appendClaim(memory, {
+      predicate: 'name',
+      value: String(perception.nickname),
+      source: SOURCES.USER,
+      evidence: String(perception.text ?? '').slice(0, 120),
+      confidence: 0.9,
+      now,
+    })
   }
 
+  memory.runtimeState.stage = stageFrom(memory)
+  memory.updatedAt = now.toISOString()
   await saveMemory(ctx, memory)
 }
 
-/** 提炼给模型的记忆摘要（精简，不占上下文）。 */
+/** 提炼给模型的记忆摘要（委托 v2 模块，保持精简）。 */
 function recallSummary(memory) {
-  const lines = []
-  const exp = memory.experiences ?? []
-  if (exp.length > 0) {
-    const last = exp[0]
-    lines.push(`最近聊过：「${last.topic}」（${last.date}，他${last.emotion}）`)
-  }
-  if (memory.profile.nickname) lines.push(`主人自称「${memory.profile.nickname}」`)
-  if (lines.length === 0) lines.push('你们刚开始相处，还没有太多共同经历')
-  return lines.join('；')
+  return summarize(memory)
 }
 
 /* ============================== 工具注册 ============================== */
