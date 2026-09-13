@@ -59,12 +59,29 @@
 ```text
 【状态】你此刻：傲娇｜能量 65 耐心 75 兴趣 70 紧张 35
 【身体】心跳 81，体温 36.6℃，呼吸平稳（只是事实，怎么反应由你自己决定）
+【惯性】你已经被连着夸了 3 次，欠着一句真心话（漏完记得立刻用更凶的话盖回去）
 ```
 
 - **只报告，不命令**：写「心跳 112」，不写「你现在应该害羞」——怎么反应是角色自己的事
 - **有惯性**：身体比情绪慢半拍（`inertia: 0.5`），不会一句话跳一次；`1` 就是立刻跟上
 - **有脾气**：基线之上永远留一点波动；而且「傲娇」天生带一点心率上浮——嘴硬但心跳快
 - **可测**：`luna-vitals.mjs` 是纯函数模块，不依赖 Cordis，能单独跑断言
+
+### 情感惯性：她「一直在那里」，而不是每次重新开始
+
+状态是跨轮保留的，但光保留还不够——没有时间维度，她看起来仍像每轮重置。`luna-inertia.mjs` 补上四件事：
+
+| 规则 | 行为 |
+| --- | --- |
+| **基线回归** | 能量 / 耐心 / 兴趣 / 紧张每轮向**角色基线**衰减（`decay: 0.06`），不是归零——情绪有去处 |
+| **缺席规则** | 离开 >30 分钟：按小时回能量；>6 小时算久别：能量回满，亲密度因想念 +1 |
+| **毒舌预算** | 10 轮窗口里最多 6 轮带刺；超了会被告知「这个窗口的毒舌预算快见底了」 |
+| **傲娇累积** | 连续被夸 3 次就欠一句真心话——漏完立刻用更凶的话盖回去 |
+
+还落实了提案点名的**反差触发条件**：只有任务关键词命中才切专注模式，不再靠 persona 文本自觉。
+
+输出是 `【惯性】…` 一行，同样**只报告不命令**，并按优先级只报最该被看见的一条
+（专注 > 傲娇 > 久别 > 毒舌预算）；没有特别情况时**不注入**，不刷屏。
 
 ---
 
@@ -127,6 +144,7 @@ dsh-luna-preset/
 ├── agent.cordis.yml      # agent 平面组合：人设、情感工具、工具面、子代理、压缩、计划模式
 ├── luna-soul.mjs         # emotion_sense 六层情感引擎（标准 Cordis 插件，apply 内 ctx.tools.register）
 ├── luna-vitals.mjs       # 生理层：情绪 → 心跳/体温/呼吸（纯函数，可单独测试）
+├── luna-inertia.mjs      # 情感惯性：基线回归 / 缺席规则 / 毒舌预算 / 傲娇累积（纯函数）
 ├── cards/luna.card.json  # SillyTavern 角色卡（精简人设版，供其他前端使用）
 ├── rules/luna-rules.md   # 可独立导出的规则包（可追加进 AGENTS.md）
 ├── persona/              # 人设文本的唯一事实源（zh / ja / en）
@@ -164,7 +182,8 @@ dsh-luna-preset/
 | 情绪关键词表 | `luna-soul.mjs` 的 `EXPLICIT_RULES` / `HIDDEN_MARKERS` |
 | 情绪 → 心情的迁移概率 | `luna-soul.mjs` 的 `nextMood` |
 | 调节与边界话术 | `luna-soul.mjs` 的 `regulate` / `understand` 的 `needTable` |
-| 生理层基线与惯性 | `luna-vitals.mjs` 的 `VITALS_DEFAULTS`（静息 72 / 36.5℃ / 16 次），或在 `agent.cordis.yml` 给 emotion 插件加 `vitals` 段覆盖 |
+| 生理层基线 | `luna-vitals.mjs` 的 `VITALS_DEFAULTS`（静息 72 / 36.5℃ / 16 次） |
+| 惯性 / 毒舌预算 / 傲娇阈值 | `luna-inertia.mjs` 的 `INERTIA_DEFAULTS`，或 `agent.cordis.yml` 的 `inertia` 段 |
 | 工具面 | `agent.cordis.yml` 里增删行（例如把 `disabled: true` 的 `subagent_codex` 打开） |
 
 **换角色**：整套引擎与角色解耦——复制目录、改 `persona.text` 与 `MOODS` 里的风格/示例，

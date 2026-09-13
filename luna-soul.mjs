@@ -16,6 +16,9 @@
 
 /** Cordis plugin name used by loader diagnostics. */
 import { deriveAndSmooth, describeVitals } from './luna-vitals.mjs'
+import {
+  regressToBaseline, applyAbsence, noteSharpness, notePraise, detectFocus, inertiaHint,
+} from './luna-inertia.mjs'
 
 export const name = 'tool-emotion'
 
@@ -217,7 +220,10 @@ function stateFor(agent) {
       tension: 30,     // 紧张：主人情绪强烈→升高→更谨慎柔和
       lastExplicit: null,
       repeatCount: 0,
-      vitals: null,    // 生理层：跨轮保留，身体比情绪慢半拍
+      vitals: null,        // 生理层：跨轮保留，身体比情绪慢半拍
+      lastSeenMs: null,    // 惯性层：上次互动时间，用来算「缺席」
+      sharpWindow: [],     // 惯性层：毒舌预算窗口
+      praiseStreak: 0,     // 惯性层：傲娇累积（连续被夸）
     }
     if (agent !== undefined) stateByAgent.set(agent, state)
   }
@@ -434,6 +440,8 @@ export function analyze(text) {
 export function apply(ctx) {
   // 生理层配置（可选）：agent.cordis.yml 里给 emotion 插件加 vitals 段即可覆盖基线
   const vitalsConfig = ctx?.config?.vitals ?? {}
+  // 惯性层配置（可选）：同上的 inertia 段
+  const inertiaConfig = ctx?.config?.inertia ?? {}
   ctx.tools.register({
     name: 'emotion_sense',
     description: '你的六层情感引擎。每次回复用户前调用它（把用户最新消息原文传入 message）：它会给出主人的情感、对话目标、你此刻的心情与状态（能量/耐心/紧张）、该用的表达风格、情绪调节策略，以及你们的共同记忆。请完全按返回的指引组织回复，但用露娜的方式表达——毒舌只是皮，读懂主人才是本小姐的真本事。',
@@ -469,6 +477,7 @@ export function apply(ctx) {
           regulation: { type: 'string', description: '情绪调节策略' },
           memory: { type: 'string', description: '与主人的共同记忆摘要' },
           vitals: { type: 'string', description: '你此刻的身体事实（心率/体温/呼吸），只作事实参考，如何反应由你决定' },
+          inertia: { type: 'string', description: '时间维度与人格一致性的状态事实（专注触发/毒舌预算/傲娇累积/久别），同样只作参考，为空表示无特别提示' },
         },
       },
       render(_args, value) {
@@ -492,6 +501,9 @@ export function apply(ctx) {
         }
         if (v.vitals) {
           lines.push(`【身体】${v.vitals}（只是事实，怎么反应由你自己决定）`)
+        }
+        if (v.inertia) {
+          lines.push(`【惯性】${v.inertia}`)
         }
         if (v.memory) {
           lines.push(`【记忆】${v.memory}`)
@@ -532,6 +544,15 @@ export function apply(ctx) {
       state.vitals = deriveAndSmooth(state, state.vitals, vitalsConfig)
       const vitalsText = describeVitals(state.vitals)
 
+      // ── 惯性层（时间维度 + 人格一致性，同样只报告）──
+      regressToBaseline(state, inertiaConfig)
+      const absence = applyAbsence(state, state.lastSeenMs, Date.now(), inertiaConfig)
+      const sharp = noteSharpness(state, state.mood, inertiaConfig)
+      const praise = notePraise(state, text, inertiaConfig)
+      const focus = detectFocus(text, inertiaConfig)
+      state.lastSeenMs = Date.now()
+      const inertiaText = inertiaHint({ focus, sharp, praise, absence })
+
       // ── 理解层 ──
       const understanding = understand(explicit.label, goal.goal, text)
 
@@ -563,6 +584,7 @@ export function apply(ctx) {
         regulation: regulation.strategy,
         memory: recallSummary(memory),
         vitals: vitalsText,
+        inertia: inertiaText,
       }
     },
   })
