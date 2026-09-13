@@ -20,8 +20,9 @@ import {
   regressToBaseline, applyAbsence, noteSharpness, notePraise, detectFocus, inertiaHint,
 } from './luna-inertia.mjs'
 import {
-  createMemory, emptyMemory, appendClaim, appendEpisode, stageFromMemory, summarize, SOURCES,
+  createMemory, emptyMemory, stageFromMemory, summarize,
 } from './luna-memory.mjs'
+import { ingest } from './luna-gate.mjs'
 
 export const name = 'tool-emotion'
 
@@ -327,6 +328,16 @@ const MEMORY_BACKUP = '.luna-heart.v1.bak.json'
 // 全局记忆缓存（一个主人一份，跨会话共享）；WeakMap 会按 agent 隔离导致互相覆盖。
 let heartMemory = null
 
+/**
+ * 重置记忆缓存。
+ *
+ * 仅供测试隔离使用：真实运行时一个进程只服务一个 home，「一个主人一份」的缓存
+ * 是有意设计；但测试里连续 apply 会互相污染，需要显式清空。
+ */
+export function __resetHeartMemory() {
+  heartMemory = null
+}
+
 /** 定位记忆文件：优先工作区根（会话沙箱可写边界内），失败退回 DSH home。 */
 async function memoryFileTarget(ctx) {
   const candidates = []
@@ -400,27 +411,15 @@ async function remember(ctx, state, perception, memory) {
     closeness: Math.max(0, Math.min(100, closeness + delta)),
   }
 
-  // 共同经历 → episode（带原文证据，供后续门控与检索使用）
-  const topic = String(perception.text ?? '').replace(/\s+/g, ' ').slice(0, 24)
-  if (topic.length > 0) {
-    appendEpisode(memory, {
-      summary: topic,
-      emotion: perception.explicit,
-      evidence: String(perception.text ?? '').slice(0, 120),
-      now,
-    })
-  }
-
-  // 称呼线索 → claim(name)
-  if (perception.nickname) {
-    appendClaim(memory, {
-      predicate: 'name',
-      value: String(perception.nickname),
-      source: SOURCES.USER,
-      evidence: String(perception.text ?? '').slice(0, 120),
-      confidence: 0.9,
-      now,
-    })
+  // 写入管线：候选提取 → 证据门控 → 合并 → 写入。
+  // 关键：候选先过闸，规则与模型都无权直接落库（issue #8 第 2.1 节）。
+  const gate = ingest(perception.text, memory, {
+    userText: perception.text,
+    perception: { explicit: perception.explicit },
+  }, now)
+  memory.lastIngest = {
+    accepted: gate.accepted.length,
+    rejected: gate.rejected.map((r) => r.reason),
   }
 
   memory.runtimeState.stage = stageFrom(memory)

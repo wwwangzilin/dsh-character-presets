@@ -34,11 +34,20 @@ export const PREDICATE_REGISTRY = {
   timezone: { type: 'string', label: '时区' },
 }
 
-/** 来源分类（写入管线用，批次 2 会按此打分）。 */
+/** 来源分类（写入管线的第二道闸；也决定一条信息能授权什么）。 */
 export const SOURCES = {
-  USER: '[USER]',           // 主人明确说的
-  INFERRED: '[INFERRED]',   // 露娜推断的
-  SYSTEM: '[SYSTEM]',       // 系统/环境
+  /** 主人自己的话 —— 「他决定了」「他问了」 */
+  USER: '[USER]',
+  /** 机器输出 —— 数字的唯一合法来源 */
+  TOOL: '[TOOL]',
+  /** 被调用的工具 —— 「这件事做了」 */
+  ACT: '[ACT]',
+  /** 露娜自己的文本 —— 第一人称判断，永远不是裸事实 */
+  SELF: '[SELF]',
+  /** 露娜的推断（要累积证据，不一次下结论） */
+  INFERRED: '[INFERRED]',
+  /** 系统 / 环境 */
+  SYSTEM: '[SYSTEM]',
 }
 
 /** v1 的情感标签 → v2 的效价（valence, -1..1）。 */

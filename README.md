@@ -146,6 +146,7 @@ dsh-luna-preset/
 ├── luna-vitals.mjs       # 生理层：情绪 → 心跳/体温/呼吸（纯函数，可单独测试）
 ├── luna-inertia.mjs      # 情感惯性：基线回归 / 缺席规则 / 毒舌预算 / 傲娇累积（纯函数）
 ├── luna-memory.mjs       # 记忆层 v2：schema / 谓词注册表 / v1→v2 迁移 / 版本检测（纯函数）
+├── luna-gate.mjs         # 写入管线：候选提取 / 证据门控（五道闸）/ 合并替代（纯函数）
 ├── tests/memory.test.mjs # 记忆层测试（node --test，零依赖）
 ├── cards/luna.card.json  # SillyTavern 角色卡（精简人设版，供其他前端使用）
 ├── rules/luna-rules.md   # 可独立导出的规则包（可追加进 AGENTS.md）
@@ -183,6 +184,21 @@ dsh-luna-preset/
   并先把原文备份为 `.luna-heart.v1.bak.json` —— **不原地丢数据**
 - **删除即重置关系**（她会在下次对话里重新认识你）
 - 已加入 `.gitignore`：这是你的私人聊天痕迹，不会被提交
+
+### 写入管线：模型不能自己决定记什么
+
+写入走的是**确定性代码**，不是模型说了算（候选 → 门控 → 合并 → 落库），五道闸：
+
+| 闸 | 规则 | 拒绝原因 |
+| --- | --- | --- |
+| 1 | **逐字引用校验**：证据必须真的出现在原文里（防编造） | `evidence_not_found` |
+| 2 | **来源分类**：必须分得清 `[USER]/[TOOL]/[ACT]/[SELF]` | `evidence_not_found` |
+| 3 | 稳定事实必须来自**主人自己**（露娜不能给主人下定义） | `claim_requires_user_source` |
+| 4 | **谓词注册表**：字段必须在白名单内 | `predicate_not_registered` |
+| 5 | **数字**必须有主人或工具的出处（防幻觉数字） | `number_requires_user_or_tool_source` |
+
+合并策略也随类型不同：同谓词的新值**替代**旧值（旧值进 `history`，不直接抹掉）、
+相似经历合并并计数、推断同 pattern 强化——证据累积到 3 条才从 `accumulating` 转为 `confirmed`。
 
 ---
 
@@ -282,8 +298,14 @@ npm test                            # 等价于 node --test
 node --test tests/memory.test.mjs   # 只跑记忆层
 ```
 
-现有覆盖：v1→v2 迁移（字段映射 / 效价换算 / 幂等性 / 无残留字段）、版本检测（v2 直通、未知版本回退空）、
-谓词注册表校验、claim 去重与置信度提升、episode 去重与上限、摘要与关系阶段推进、遗忘抑制的可见性。
+现有覆盖（51 个用例）：
+
+- `tests/memory.test.mjs`（24）—— v1→v2 迁移（字段映射 / 效价换算 / 幂等性 / 无残留）、版本检测、
+  谓词注册表、claim 去重与置信度、episode 去重与上限、摘要与阶段、遗忘抑制可见性
+- `tests/gate.test.mjs`（22）—— 五道闸的**各种拒绝场景**、来源分类、候选提取、相似度、
+  合并策略（insert/replace/touch/merge/reinforce）、replace 保留 history、推断累积转 confirmed
+- `tests/engine.test.mjs`（5）—— 真的 `apply()` 一次跑对话：六层文本 + 【身体】，
+  记忆按 v2 落库、跨轮状态延续、v1 文件自动迁移、编造内容进不来
 
 ---
 
