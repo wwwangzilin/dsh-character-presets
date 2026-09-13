@@ -55,24 +55,47 @@
 
 ## 安装
 
+**一行命令（推荐）**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wwwangzilin/dsh-luna-preset/main/install.sh | bash
+```
+
+```powershell
+irm https://raw.githubusercontent.com/wwwangzilin/dsh-luna-preset/main/install.ps1 | iex
+```
+
+跨平台（需要 node）：
+
+```bash
+npx github:wwwangzilin/dsh-luna-preset
+```
+
+脚本会把仓库装到 `<dshHome>/.agent-presets/luna`（已装过则更新）→ 校验关键文件 → 提示重启。
+目标目录可用 `DSH_HOME`（默认 `~/.dsh`）或 `DSH_PRESETS_DIR` 覆盖；目录名固定为 `luna`。
+
+---
+
+### 手动安装（等价）
+
 要求：一个支持 agent preset 的 DeepSeek Harness 部署（随附 `standard` / `minimal` 等的正常安装即可）。
 本 preset 只用 DSH 内置插件，**不需要额外安装任何 npm 依赖**。
 
 **目录名必须是 `luna`** —— DSH 以目录名作为 preset id。
 
-### macOS / Linux
+#### macOS / Linux
 
 ```bash
 git clone https://github.com/wwwangzilin/dsh-luna-preset.git ~/.dsh/.agent-presets/luna
 ```
 
-### Windows（PowerShell）
+#### Windows（PowerShell）
 
 ```powershell
 git clone https://github.com/wwwangzilin/dsh-luna-preset.git "$env:USERPROFILE\.dsh\.agent-presets\luna"
 ```
 
-### 不想用 git
+#### 不想用 git
 
 下载仓库压缩包，解压后把整个目录重命名为 `luna`，放进 `<dshHome>/.agent-presets/`（默认即 `~/.dsh/.agent-presets/`）。
 
@@ -85,9 +108,15 @@ git clone https://github.com/wwwangzilin/dsh-luna-preset.git "$env:USERPROFILE\.
 
 ```text
 dsh-luna-preset/
-├── preset.yml          # 预设元信息：选择器里显示的名称与描述
-├── agent.cordis.yml    # agent 平面组合：人设、情感工具、工具面、子代理、压缩、计划模式
-└── luna-soul.mjs       # emotion_sense 六层情感引擎（标准 Cordis 插件，apply 内 ctx.tools.register）
+├── preset.yml            # 预设元信息：选择器里显示的名称与描述
+├── agent.cordis.yml      # agent 平面组合：人设、情感工具、工具面、子代理、压缩、计划模式
+├── luna-soul.mjs         # emotion_sense 六层情感引擎（标准 Cordis 插件，apply 内 ctx.tools.register）
+├── cards/luna.card.json  # SillyTavern 角色卡（精简人设版，供其他前端使用）
+├── install.sh            # 一键安装（macOS / Linux）
+├── install.ps1           # 一键安装（Windows PowerShell）
+├── bin/install.mjs       # 一键安装（npx，跨平台）
+├── CONTRIBUTING.md       # 贡献指南（三条设计原则 + 自测清单）
+└── CODE_OF_CONDUCT.md    # 行为准则
 ```
 
 `agent.cordis.yml` 是**完整的自包含组合**：它逐行声明这个 agent 能用什么工具，
@@ -119,6 +148,25 @@ dsh-luna-preset/
 
 **换角色**：整套引擎与角色解耦——复制目录、改 `persona.text` 与 `MOODS` 里的风格/示例，
 就能得到另一只完全不同的角色（本仓库同源的还有猫娘模式等）。
+
+---
+
+## 在其他平台使用露娜
+
+`cards/luna.card.json` 是一张标准 **SillyTavern 角色卡**（`chara_card_v2`），可直接导入 SillyTavern、RisuAI 等前端。
+
+| 能力 | 角色卡 | 完整预设（DSH） |
+| --- | --- | --- |
+| 人设 / 口头禅 / 开场白 / 示例对话 | ✅ | ✅ |
+| 六层情感引擎（`emotion_sense`） | ❌ | ✅ |
+| 情绪识别、状态迁移、边界调节的**可复现规则** | ❌ | ✅ |
+| 跨会话记忆（`.luna-heart.json`） | ❌ | ✅ |
+| 完整工具链（文件、Shell、检索、子代理…） | ❌ | ✅ |
+
+**为什么要把差异写清楚**：角色卡导出的只是**人设与示例**，不含情感引擎。
+在别的平台她会「像露娜」，但不会**持续积累**成露娜——想要完整体验仍需 DSH + 本预设。
+
+导入：SillyTavern → 角色 → 导入 → 选 `cards/luna.card.json`。
 
 ---
 
