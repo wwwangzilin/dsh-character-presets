@@ -349,23 +349,17 @@ export function __resetHeartMemory() {
 }
 
 /**
- * 定位记忆文件：优先工作区根（会话沙箱可写边界内），失败退回 DSH home。
+ * 候选落点，按优先级：**DSH home 优先**，工作区根兜底。
  *
- * 历史教训：早期版本这里拿 `ctx.get('dshHome')` 当第二个候选，但 **dshHome 并不是
- * cordis 服务**（0.1.5-rc.2 里它只是 agent-instructions 的配置字段），而 inject 里又
- * 漏了 `sandboxPolicy` —— 两个候选全部抛错并被 catch 吞掉，记忆因此从未落盘过。
- * 现在：服务候选只认真实存在的 sandboxPolicy，home 从环境变量 / 家目录推导，定位结果
- * 也不再静默（见 __persist）。
+ * home 是固定位置 —— 换启动目录、换工作区都还是同一份记忆；工作区根只在沙箱不许写
+ * home 时当退路。
+ *
+ * 历史教训：早期版本反过来（工作区根优先），还拿 `ctx.get('dshHome')` 当候选 —— 但
+ * **dshHome 并不是 cordis 服务**（0.1.5-rc.2 里它只是 agent-instructions 的配置字段），
+ * 加上 inject 里漏了 `sandboxPolicy`，两个候选全部抛错被 catch 吞掉，记忆从未落盘过。
  */
-async function memoryFileTarget(ctx) {
+function candidateTargets(ctx) {
   const candidates = []
-  try {
-    const policy = ctx.get('sandboxPolicy')
-    if (policy !== undefined && typeof policy.workspaceRoot === 'string' && policy.workspaceRoot.length > 0) {
-      candidates.push(policy.workspaceRoot.replace(/[\\/]+$/, '') + '/' + MEMORY_FILE)
-    }
-  } catch { /* 未 inject 或未提供策略时忽略该候选 */ }
-
   let home = typeof process.env.DSH_HOME === 'string' ? process.env.DSH_HOME : ''
   if (home.length === 0) {
     try { home = homedir() + '/.dsh' } catch { home = '' }
@@ -373,12 +367,60 @@ async function memoryFileTarget(ctx) {
   if (home.length > 0) {
     candidates.push(home.replace(/[\\/]+$/, '') + '/' + MEMORY_FILE)
   }
+  try {
+    const policy = ctx.get('sandboxPolicy')
+    if (policy !== undefined && typeof policy.workspaceRoot === 'string' && policy.workspaceRoot.length > 0) {
+      candidates.push(policy.workspaceRoot.replace(/[\\/]+$/, '') + '/' + MEMORY_FILE)
+    }
+  } catch { /* 未 inject 或未提供策略时忽略该候选 */ }
+  return candidates
+}
 
+/** 探测候选是否可写：写一份空记忆，随后会被真实内容覆盖。 */
+async function probeWritable(ctx, raw) {
+  try {
+    const target = await ctx.fs.resolve(raw)
+    const { __location, __persist, ...plain } = emptyMemory()
+    await ctx.fs.writeText(target, JSON.stringify(plain, null, 2))
+    return { target, raw }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 定位记忆：先按优先级找一份**读得到**的记忆（home 优先，于是换了启动目录也能把旧档找回来），
+ * 再决定**写哪儿**（首选可写就写首选；从别处搬过来时旧档保留，绝不删数据）。
+ */
+async function memoryFileTarget(ctx) {
+  const candidates = candidateTargets(ctx)
+  if (candidates.length === 0) return undefined
+
+  let found
   for (const raw of candidates) {
     try {
       const target = await ctx.fs.resolve(raw)
-      return { target, raw }
-    } catch { /* 该候选不可写，试下一个 */ }
+      await ctx.fs.readText(target) // 读得到才算数
+      found = { target, raw }
+      break
+    } catch { /* 这一处还没有记忆，试下一个 */ }
+  }
+
+  // 命中的已经是首选位置：直接用它。这里绝不能再「探测」一次——探测会写一份空记忆，
+  // 正好把刚读到的内容覆盖掉（这个坑测试抓到过）。
+  if (found !== undefined && found.raw === candidates[0]) return found
+
+  const preferred = await probeWritable(ctx, candidates[0])
+  if (preferred !== undefined) {
+    // 记忆在别处（早期版本写在工作区根）→ 读旧位置、写新位置，完成搬家。
+    return found !== undefined && found.raw !== preferred.raw
+      ? { ...preferred, readFrom: found.raw }
+      : preferred
+  }
+  if (found !== undefined) return found
+  for (const raw of candidates.slice(1)) {
+    const probe = await probeWritable(ctx, raw)
+    if (probe !== undefined) return probe
   }
   return undefined
 }
@@ -390,7 +432,11 @@ async function loadMemory(ctx) {
   let migrated = false
   if (location !== undefined) {
     try {
-      const text = await ctx.fs.readText(location.target)
+      // 记忆在旧位置（如早期版本写在工作区根）时：读旧档，随后写进首选位置。
+      const readTarget = location.readFrom !== undefined
+        ? await ctx.fs.resolve(location.readFrom)
+        : location.target
+      const text = await ctx.fs.readText(readTarget)
       const parsed = JSON.parse(text)
       const result = createMemory(parsed)
       memory = result.memory

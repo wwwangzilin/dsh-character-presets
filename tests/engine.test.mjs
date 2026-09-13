@@ -1,16 +1,29 @@
 // 引擎级集成测试：真的 apply 一次，跑一轮对话，看记忆有没有按 v2 落库、能不能跨会话读回。
 //
 //   node --test tests/engine.test.mjs
-import { test, beforeEach } from 'node:test'
+import { test, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { apply, __resetHeartMemory, inject } from '../luna-soul.mjs'
 
-// 记忆缓存在模块级（真实运行时的有意设计），测试之间必须显式隔离。
-beforeEach(() => { __resetHeartMemory() })
-
-/** 记忆文件落点：工作区根优先（沙箱内唯一稳可写的位置）。 */
+/** 首选落点（DSH home）：固定位置 —— 换启动目录、换工作区都还是同一份记忆。 */
+const HOME_MEMORY = 'C:/fake-home/.dsh/.luna-heart.json'
+/** 兜底落点（工作区根）：沙箱不许写 home 时才用。 */
 const WORKSPACE_MEMORY = 'D:/fake-workspace/.luna-heart.json'
+
+const ORIGINAL_DSH_HOME = process.env.DSH_HOME
+
+beforeEach(() => {
+  // 记忆缓存在模块级（真实运行时的有意设计），测试之间必须显式隔离。
+  __resetHeartMemory()
+  // home 必须可控，否则落点会跟着真机的 ~/.dsh 跑。
+  process.env.DSH_HOME = 'C:/fake-home/.dsh'
+})
+
+afterEach(() => {
+  if (ORIGINAL_DSH_HOME === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = ORIGINAL_DSH_HOME
+})
 
 /**
  * 最小 ctx 替身：只要 tools.register / fs / get / logger。
@@ -18,12 +31,13 @@ const WORKSPACE_MEMORY = 'D:/fake-workspace/.luna-heart.json'
  * 替身必须跟真机一致 —— 这是踩过的坑：早期版本这里给 `ctx.get('dshHome')` 编了一个
  * 返回值，可真实环境里 **dshHome 根本不是 cordis 服务**，于是生产代码里那条候选永远
  * 抛错、被 catch 吞掉，记忆一次都没落过盘，而测试全程绿灯。现在只提供真实存在的
- * `sandboxPolicy`；`workspaceRoot: null` 用来模拟「拿不到工作区根」的场景。
+ * `sandboxPolicy`；`denyWrite` 用来模拟沙箱拒绝某个落点。
  */
 function makeCtx(options = {}) {
   const tools = []
   const files = new Map()
   const workspaceRoot = options.workspaceRoot === undefined ? 'D:/fake-workspace' : options.workspaceRoot
+  const denyWrite = options.denyWrite ?? []
   const ctx = {
     tools: { register: (def) => tools.push(def) },
     fs: {
@@ -32,7 +46,12 @@ function makeCtx(options = {}) {
         if (!files.has(target.path)) throw new Error('ENOENT')
         return files.get(target.path)
       },
-      writeText: async (target, text) => { files.set(target.path, text) },
+      writeText: async (target, text) => {
+        if (denyWrite.some((prefix) => target.path.startsWith(prefix))) {
+          throw new Error('EACCES: sandbox denies this path')
+        }
+        files.set(target.path, text)
+      },
     },
     get: (name) => (name === 'sandboxPolicy' && workspaceRoot !== null ? { workspaceRoot } : undefined),
     logger: { warn: () => {} },
@@ -60,7 +79,7 @@ test('inject 声明了记忆落盘所需的全部服务', () => {
   assert.ok(inject.includes('sandboxPolicy'), 'inject 应含 sandboxPolicy')
 })
 
-test('一轮对话：六层文本 + 身体事实，且记忆按 v2 落库', async () => {
+test('一轮对话：六层文本 + 身体事实，且记忆按 v2 落库到 DSH home', async () => {
   const { ctx, tools, files } = makeCtx()
   apply(ctx)
   const tool = tools[0]
@@ -78,8 +97,8 @@ test('一轮对话：六层文本 + 身体事实，且记忆按 v2 落库', asyn
   assert.match(rendered, /【身体】/)
   assert.match(rendered, /【记忆】/)
 
-  const written = files.get(WORKSPACE_MEMORY)
-  assert.ok(written, '应写出记忆文件')
+  const written = files.get(HOME_MEMORY)
+  assert.ok(written, '应写到 DSH home（首选落点）')
   const mem = JSON.parse(written)
   assert.equal(mem.version, '2.0.0', '必须写 v2')
   assert.ok(mem.claims.some((c) => c.predicate === 'name'), '称呼应作为 claim 落库')
@@ -94,47 +113,62 @@ test('持久化状态会写进摘要，且内部字段不落进文件', async ()
   const value = await tools[0].execute({ message: '你好' }, { agent: { id: 'agent-badge' } })
 
   assert.match(value.memory, /持久化 ✓/, '摘要应报告持久化成功')
-  const mem = JSON.parse(files.get(WORKSPACE_MEMORY))
+  const mem = JSON.parse(files.get(HOME_MEMORY))
   assert.equal(mem.__location, undefined, '__location 是运行时句柄，不该落盘')
   assert.equal(mem.__persist, undefined, '__persist 是运行时状态，不该落盘')
 })
 
-test('拿不到工作区根时退回 DSH_HOME，仍然落盘', async () => {
-  const previous = process.env.DSH_HOME
-  process.env.DSH_HOME = 'C:/fake-home/.dsh'
-  try {
-    const { ctx, tools, files } = makeCtx({ workspaceRoot: null })
-    apply(ctx)
-    const value = await tools[0].execute({ message: '在吗' }, { agent: { id: 'agent-home' } })
-    assert.ok(files.has('C:/fake-home/.dsh/.luna-heart.json'), '应退回 DSH_HOME 落盘')
-    assert.match(value.memory, /持久化 ✓/)
-  } finally {
-    if (previous === undefined) delete process.env.DSH_HOME
-    else process.env.DSH_HOME = previous
-  }
+test('DSH home 写不进时退回工作区根（沙箱只放行工作区）', async () => {
+  const { ctx, tools, files } = makeCtx({ denyWrite: ['C:/fake-home'] })
+  apply(ctx)
+  const value = await tools[0].execute({ message: '在吗' }, { agent: { id: 'agent-ws' } })
+
+  assert.ok(files.has(WORKSPACE_MEMORY), '应退回工作区根落盘')
+  assert.ok(!files.has(HOME_MEMORY), 'home 被拒时不该留下半截文件')
+  assert.match(value.memory, /持久化 ✓/)
 })
 
 test('跨会话：重启后从磁盘读回记忆（露娜真的记得主人）', async () => {
   const first = makeCtx()
   apply(first.ctx)
   await first.tools[0].execute({ message: '叫我阿伟，我是做嵌入式的' }, { agent: { id: 'agent-old' } })
-  const onDisk = first.files.get(WORKSPACE_MEMORY)
+  const onDisk = first.files.get(HOME_MEMORY)
   assert.ok(onDisk, '第一轮应落盘')
 
   // 模拟进程重启：磁盘文件还在，模块级缓存清空。
   __resetHeartMemory()
   const second = makeCtx()
-  second.files.set(WORKSPACE_MEMORY, onDisk)
+  second.files.set(HOME_MEMORY, onDisk)
   apply(second.ctx)
   const value = await second.tools[0].execute({ message: '在吗' }, { agent: { id: 'agent-new' } })
 
   assert.match(value.memory, /阿伟/, '重启后应记得主人自称阿伟')
   // 摘要只展示部分字段，所以到磁盘上查 claim 全量。
-  const reloaded = JSON.parse(second.files.get(WORKSPACE_MEMORY))
+  const reloaded = JSON.parse(second.files.get(HOME_MEMORY))
   assert.ok(
     reloaded.claims.some((c) => c.predicate === 'occupation' && String(c.value).includes('嵌入式')),
     '重启后应记得主人的行当',
   )
+})
+
+test('旧档在工作区根时会被搬到 DSH home（且不删旧数据）', async () => {
+  // 第一程：home 写不进 → 记忆落到工作区根。
+  const first = makeCtx({ denyWrite: ['C:/fake-home'] })
+  apply(first.ctx)
+  await first.tools[0].execute({ message: '叫我阿伟' }, { agent: { id: 'agent-move-1' } })
+  const legacyText = first.files.get(WORKSPACE_MEMORY)
+  assert.ok(legacyText, '先在工作区根落档')
+
+  // 第二程：home 可写了 → 读旧档、写新档。
+  __resetHeartMemory()
+  const second = makeCtx()
+  second.files.set(WORKSPACE_MEMORY, legacyText)
+  apply(second.ctx)
+  const value = await second.tools[0].execute({ message: '在吗' }, { agent: { id: 'agent-move-2' } })
+
+  assert.match(value.memory, /阿伟/, '搬家途中不能丢记忆')
+  assert.ok(second.files.has(HOME_MEMORY), '应写进 DSH home')
+  assert.ok(second.files.has(WORKSPACE_MEMORY), '旧档保留，不删数据')
 })
 
 test('睡眠整合按节拍触发（每 20 轮老化 + 合并一次）', async () => {
@@ -144,10 +178,10 @@ test('睡眠整合按节拍触发（每 20 轮老化 + 合并一次）', async (
   const exec = { agent: { id: 'agent-sleep' } }
 
   for (let i = 1; i <= 19; i += 1) await tool.execute({ message: `第 ${i} 轮` }, exec)
-  assert.equal(JSON.parse(files.get(WORKSPACE_MEMORY)).lastSleep, undefined, '19 轮还不该整合')
+  assert.equal(JSON.parse(files.get(HOME_MEMORY)).lastSleep, undefined, '19 轮还不该整合')
 
   await tool.execute({ message: '第 20 轮' }, exec)
-  const mem = JSON.parse(files.get(WORKSPACE_MEMORY))
+  const mem = JSON.parse(files.get(HOME_MEMORY))
   assert.ok(mem.lastSleep, '第 20 轮应触发睡眠整合')
   assert.equal(mem.lastSleep.turns, 20)
 })
@@ -176,7 +210,7 @@ test('旧版 v1 记忆文件会被自动迁移并覆盖成 v2', async () => {
     relationship: { stage: '熟客', closeness: 30 },
     experiences: [{ date: '2026-09-01', topic: '聊过备份', emotion: '开心' }],
   }
-  files.set(WORKSPACE_MEMORY, JSON.stringify(legacy))
+  files.set(HOME_MEMORY, JSON.stringify(legacy))
   apply(ctx)
   const tool = tools[0]
 
@@ -184,7 +218,7 @@ test('旧版 v1 记忆文件会被自动迁移并覆盖成 v2', async () => {
   assert.match(value.memory, /老王/, '迁移后的称呼应出现在摘要里')
   assert.match(value.memory, /已从 v1 迁移/, '摘要应标出迁移')
 
-  const after = JSON.parse(files.get(WORKSPACE_MEMORY))
+  const after = JSON.parse(files.get(HOME_MEMORY))
   assert.equal(after.version, '2.0.0')
   assert.ok(after.claims.some((c) => c.predicate === 'name' && c.value === '老王'))
 })
@@ -195,6 +229,6 @@ test('编造的内容进不了记忆（门控在引擎里生效）', async () =>
   const tool = tools[0]
 
   await tool.execute({ message: '今天天气不错' }, { agent: { id: 'agent-4' } })
-  const mem = JSON.parse(files.get(WORKSPACE_MEMORY))
+  const mem = JSON.parse(files.get(HOME_MEMORY))
   assert.equal(mem.claims.length, 0, '没有明说的字段不该凭空产生 claim')
 })
