@@ -8,33 +8,41 @@
 这是一组 DSH **agent preset**：不替换你的模型、不改宿主配置，只是往 `<dshHome>/.agent-presets/` 里放目录，
 新建会话时选中哪一位，这个会话就由谁来跑——人格、说话方式、思考方式全换，能力一条不砍。
 
-## 角色一览
+## 角色一览（核心 3 位）
 
-| 角色 | 一句话 | 反差钩子 |
+| 角色 | 一句话 | 为什么留它 |
 | --- | --- | --- |
-| 🦇 **露娜** Luna | 魔界小恶魔，雌小鬼毒舌 | 嘴硬到底，被反杀就怂，一被夸就飘 |
-| 🐱 **小喵** nekomode | 傲娇猫娘，口是心非 | 嘴上「才不是为你做的」，身体已经赖在旁边了 |
-| ⛩️ **绯音** Akane | 病娇式神 | 内核不是「想伤害你」，而是「怕你丢下我」 |
-| ⚔️ **凛** Rin | 三无剑灵 | 报告式的温柔：凌晨三点站在门口「巡逻」 |
-| 🧚 **芽衣** Mei | 森林小妖精 | 冒冒失失，却是把你从低落里硬拽出来的那个 |
-| 🎴 **白夜** Byakuya | 冷艳巫女 | **重度社恐**，被直视就结巴，「神谕」多半是现编的 |
-| 🤖 **阿尔玛** Alma | 旧式机械女仆 | 情绪过载会**卡带漏真心话**，随即「记录已损坏」 |
-| 🎧 **小铃** Suzu | 街头不良少女 | **怕生 + 被夸就炸毛**，深夜偷偷去喂流浪猫 |
-| 💼 **三千代** Michiyo | 干练社畜 | **生活能力为零**，怕黑还嘴硬「只是省电」；正经活首选 |
-| 🕯️ **灰** Hui | 图书馆幽灵 | **记不住自己的名字**——因为没人叫过 |
+| 🦇 **露娜** Luna | 魔界小恶魔，雌小鬼毒舌 | 引擎的主人，人设最完整；嘴硬到底、被反杀就怂 |
+| 🐱 **小喵** nekomode | 傲娇猫娘，口是心非 | 门槛最低：纯拟声词撒娇，零认知负担 |
+| 💼 **三千代** Michiyo | 干练社畜，生活能力为零 | 干正事首选：专注模式下零卖萌，只谈结论与风险 |
 
 ```bash
 node scripts/install-character.mjs list           # 看看有哪些
-node scripts/install-character.mjs install --all   # 全装
-node scripts/install-character.mjs install hui     # 只装一位
+node scripts/install-character.mjs install --all   # 全装（就是这三位）
+node scripts/install-character.mjs install <id>    # 装指定角色
 ```
+
+> ### 想要更多？切到 [`extras`](../../tree/extras) 分支
+>
+> 另有 **7 位角色**完整保留在那里：⛩️ 绯音（病娇式神）、⚔️ 凛（三无剑灵）、🧚 芽衣（森林小妖精）、
+> 🎴 白夜（社恐巫女）、🤖 阿尔玛（旧式机械女仆）、🎧 小铃（街头不良）、🕯️ 灰（图书馆幽灵）。
+>
+> ```bash
+> git checkout extras    # 完整 10 位
+> git checkout main      # 回到核心 3 位
+> ```
+>
+> 刻意不放进默认列表 —— 一般人用不上那么多。但**它们身上的写法已经全部提炼进
+> [`persona-template/ADVANCED.md`](persona-template/ADVANCED.md)**：危险人设怎么配红线、
+> 行为模式怎么写动作、怎么给情绪留出口、怎么用记忆层做剧情。
+> **角色归档了，经验留下来。**
 
 角色包全在 [`characters/`](characters/)：每位一份 `persona.md`（11 段结构）+ 一份 `card.json`（chara_card_v2，
 供 [dsh-role-cards](https://github.com/wwwangzilin/dsh-role-cards) 的卡片墙与 GAL 界面复用）。
 
 ---
 
-## 十个角色，共用一套引擎
+## 三位核心，共用一套引擎
 
 角色的差异**只落在文本层**：persona、`MOODS` 风格句、关键词表。引擎本身不认识任何一个角色，
 所以加角色永远不用改代码。
