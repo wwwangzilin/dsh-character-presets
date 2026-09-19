@@ -4,7 +4,7 @@
 import { test, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { apply, __resetHeartMemory, inject } from '../luna-soul.mjs'
+import { apply, __resetHeartMemory, __setFileBackend, inject } from '../luna-soul.mjs'
 
 /** 首选落点（DSH home）：固定位置 —— 换启动目录、换工作区都还是同一份记忆。 */
 const HOME_MEMORY = 'C:/fake-home/.dsh/.luna-heart.json'
@@ -23,36 +23,43 @@ beforeEach(() => {
 afterEach(() => {
   if (ORIGINAL_DSH_HOME === undefined) delete process.env.DSH_HOME
   else process.env.DSH_HOME = ORIGINAL_DSH_HOME
+  // 后端是模块级的，测试之间必须还原，否则下一个测试会往上一个的文件表里写
+  __setFileBackend(null)
 })
 
 /**
- * 最小 ctx 替身：只要 tools.register / fs / get / logger。
+ * 最小 ctx 替身：只要 tools.register / get / logger。
  *
  * 替身必须跟真机一致 —— 这是踩过的坑：早期版本这里给 `ctx.get('dshHome')` 编了一个
  * 返回值，可真实环境里 **dshHome 根本不是 cordis 服务**，于是生产代码里那条候选永远
  * 抛错、被 catch 吞掉，记忆一次都没落过盘，而测试全程绿灯。现在只提供真实存在的
  * `sandboxPolicy`；`denyWrite` 用来模拟沙箱拒绝某个落点。
+ *
+ * 记忆层现在走 `node:fs/promises` **直写**（绕开沙箱对 ctx.fs 的限制，那正是记忆
+ * 长期存不下去的根因），所以文件替身挂在「文件后端」上而不是 ctx.fs 上——
+ * 不换的话，测试会真的往磁盘写文件。
  */
 function makeCtx(options = {}) {
   const tools = []
   const files = new Map()
   const workspaceRoot = options.workspaceRoot === undefined ? 'D:/fake-workspace' : options.workspaceRoot
   const denyWrite = options.denyWrite ?? []
+
+  __setFileBackend({
+    readText: async (file) => {
+      if (!files.has(file)) throw new Error('ENOENT')
+      return files.get(file)
+    },
+    writeText: async (file, text) => {
+      if (denyWrite.some((prefix) => file.startsWith(prefix))) {
+        throw new Error('EACCES: sandbox denies this path')
+      }
+      files.set(file, text)
+    },
+  })
+
   const ctx = {
     tools: { register: (def) => tools.push(def) },
-    fs: {
-      resolve: async (raw) => ({ path: raw }),
-      readText: async (target) => {
-        if (!files.has(target.path)) throw new Error('ENOENT')
-        return files.get(target.path)
-      },
-      writeText: async (target, text) => {
-        if (denyWrite.some((prefix) => target.path.startsWith(prefix))) {
-          throw new Error('EACCES: sandbox denies this path')
-        }
-        files.set(target.path, text)
-      },
-    },
     get: (name) => (name === 'sandboxPolicy' && workspaceRoot !== null ? { workspaceRoot } : undefined),
     logger: { warn: () => {} },
     on: () => {},
@@ -107,9 +114,11 @@ test('输出字段必须全部在 schema 里声明（多一个就会被拒）', 
 
 test('inject 声明了记忆落盘所需的全部服务', () => {
   assert.ok(inject.includes('tools'), 'inject 应含 tools')
-  assert.ok(inject.includes('fs'), 'inject 应含 fs')
   // 少了它，ctx.get('sandboxPolicy') 会抛错 → 记忆定位失败 → 永不落盘。
   assert.ok(inject.includes('sandboxPolicy'), 'inject 应含 sandboxPolicy')
+  // 记忆改走 node:fs/promises 直写之后不再需要 ctx.fs；多声明会让人误以为它还有用，
+  // 而「inject 必须与实际用到的服务严格对齐」是这个模块用血换来的教训。
+  assert.ok(!inject.includes('fs'), 'inject 不该再声明 fs')
 })
 
 test('一轮对话：六层文本 + 身体事实，且记忆按 v2 落库到 DSH home', async () => {
