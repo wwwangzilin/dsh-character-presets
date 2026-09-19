@@ -27,7 +27,8 @@ $EDITOR preset.yml             # name / description 换成新角色
 | `persona/<lang>.md` | 身份 / 人设 / 口头禅 / 行为模式 / 反差 / 表达技巧 / 工作守则 | ✅ |
 | `preset.yml` | `name`（选择器显示名）、`description` | ✅ |
 | `luna-soul.mjs` 的 `MOODS` | 各心情档位的**风格描述与示例句**（露娜的嘴替换成你的角色） | 强烈建议 |
-| `luna-soul.mjs` 的 `EXPLICIT_RULES` / `HIDDEN_MARKERS` | 情绪关键词表（角色语料不同，命中率会不同） | 建议 |
+| `luna-emotion.mjs` 的 `EXPLICIT_RULES` / `NEGATIONS` / `MIXED_PATTERNS` | 情绪关键词表与判据（角色语料不同，命中率会不同） | 建议 |
+| `luna-vitals.mjs` 的 `SENSATIONS` | 局部体感表——换成你角色的「破绽」所在（耳朵 / 尾巴 / 指尖 / 后颈），三档强度各一句 | 建议 |
 | `luna-soul.mjs` 的 `needTable` / `regulate` | 安抚与边界话术 | 建议 |
 | `cards/` | 想要别的前端也能用，就导出一张角色卡 | 可选 |
 
@@ -37,6 +38,8 @@ $EDITOR preset.yml             # name / description 换成新角色
 ## 检查清单
 
 - [ ] `node --check luna-soul.mjs` 通过
+- [ ] `node --test` 全绿（感知层 / 生理层都有断言守着；改过关键词表或体感表后尤其要跑）
+- [ ] `node scripts/preview.mjs` 打出的对照表读起来像你的角色
 - [ ] `node scripts/use-persona.mjs xx --dry-run` 显示缩进与行数正常
 - [ ] 重启 DSH 后新 preset 出现在选择器里，能选中
 - [ ] 随便聊两句：`emotion_sense` 返回的是**你角色**的风格与示例，不是露娜的
