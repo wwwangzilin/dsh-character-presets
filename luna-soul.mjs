@@ -19,6 +19,7 @@ import { homedir } from 'node:os'
 /** Cordis plugin name used by loader diagnostics. */
 import { deriveAndSmooth, describeVitals } from './luna-vitals.mjs'
 import { analyzeEmotion, isHidden } from './luna-emotion.mjs'
+import { WORK_GUARD, WORK_TIPS, WORK_STYLE, modeLine, nextMode, recallBias } from './luna-mode.mjs'
 import {
   regressToBaseline, applyAbsence, noteSharpness, notePraise, detectFocus, inertiaHint,
 } from './luna-inertia.mjs'
@@ -213,20 +214,23 @@ function stateFor(agent) {
       lastSeenMs: null,    // 惯性层：上次互动时间，用来算「缺席」
       sharpWindow: [],     // 惯性层：毒舌预算窗口
       praiseStreak: 0,     // 惯性层：傲娇累积（连续被夸）
+      modeState: null,     // 时刻层：工作 / 闲聊的粘滞状态（见 luna-mode.mjs）
     }
     if (agent !== undefined) stateByAgent.set(agent, state)
   }
   return state
 }
 
-/** 状态迁移（表达调节器）。 */
-function evolveState(state, explicit) {
+/** 状态迁移（表达调节器）。mode 是时刻层的结论：工作时刻要铆足劲，不该被闲话带软。 */
+function evolveState(state, explicit, mode = 'chat') {
   state.turns += 1
+  const working = mode === 'work'
 
-  // 耐心：同一情绪反复出现→递减
+  // 耐心：同一情绪反复出现→递减；但干活时不容易烦，扣得慢
   if (state.lastExplicit === explicit) {
     state.repeatCount += 1
-    state.patience = Math.max(20, state.patience - (state.repeatCount > 2 ? 10 : 5))
+    const drop = state.repeatCount > 2 ? 10 : 5
+    state.patience = Math.max(20, state.patience - (working ? drop * 0.4 : drop))
   } else {
     state.repeatCount = 0
     state.patience = Math.min(90, state.patience + 8)
@@ -237,9 +241,11 @@ function evolveState(state, explicit) {
   if (explicit === '开心' || explicit === '撒娇') state.energy = Math.min(95, state.energy + 8)
   if (explicit === '难过' || explicit === '生气' || explicit === '焦虑') state.energy = Math.max(25, state.energy - 6)
   state.energy = Math.max(15, Math.min(90, state.energy + (state.turns % 3 === 0 ? 3 : 0)))
+  // 铆足劲是要花力气的：工作时刻额外扣一点（干完活会累，这不是 bug）
+  if (working) state.energy = Math.max(15, state.energy - 3)
 
-  // 兴趣：工作/询问话题更投入
-  state.interest = explicit === '认真工作'
+  // 兴趣：工作话题更投入；处在工作时刻时不会因为夹了一句闲话就掉下去
+  state.interest = explicit === '认真工作' || working
     ? Math.min(95, state.interest + 10)
     : Math.max(25, state.interest - 2)
 
@@ -254,8 +260,15 @@ function evolveState(state, explicit) {
 
 /* ============================== 表达层 ============================== */
 
-/** 按心情 + 能量/紧张组合表达风格档位。 */
+/**
+ * 按心情 + 能量/紧张组合表达风格档位。
+ * 工作时刻直接换档：心情那套（卖萌、撒娇、短句感叹）让位给「铆足劲干」。
+ */
 function styleFor(state) {
+  if (state.modeState?.mode === 'work') {
+    return { style: WORK_STYLE.style, sample: WORK_STYLE.sample, expressionTips: WORK_TIPS }
+  }
+
   const mood = MOODS[state.mood] ?? MOODS.平淡
   const energy = state.energy
   const tension = state.tension
@@ -286,8 +299,12 @@ function styleFor(state) {
 
 /* ============================== 调节层 ============================== */
 
-/** 情绪调节与安全边界。 */
-export function regulate(explicit, text) {
+/**
+ * 情绪调节与安全边界。
+ * 注意顺序：挑衅与情绪兜底**优先于**时刻层——主人正难受的时候，
+ * 「现在是工作时刻」不该压过「先接住情绪」。
+ */
+export function regulate(explicit, text, mode = 'chat') {
   const lower = text.toLowerCase()
   const baitPatterns = [
     { re: /你就是个|你不行|废物|垃圾|没用的|你怎么不去死|闭嘴/, label: '挑衅', strategy: '不接招、不辩解、不失态，温和而坚定地保持稳定', note: '用户可能想引你发火或崩溃，稳住' },
@@ -303,6 +320,9 @@ export function regulate(explicit, text) {
   }
   if (explicit === '难过') {
     return { triggered: false, strategy: '陪伴但不假装自己也很痛苦：共情要真诚，不编造共同经历', note: '悲伤需要的是陪伴，不是表演' }
+  }
+  if (mode === 'work') {
+    return { triggered: false, strategy: WORK_GUARD, note: '工作时刻：铆足劲，不打岔' }
   }
   return { triggered: false, strategy: '正常发挥，保持露娜毒舌但不下线的稳定人设', note: null }
 }
@@ -531,6 +551,8 @@ export function apply(ctx, config) {
   const inertiaConfig = config?.inertia ?? {}
   // 检索配置（可选）：retrieval 段（maxResults 等）
   const recallConfig = config?.retrieval ?? {}
+  // 时刻层配置（可选）：mode 段（粘滞轮数、进入/退出阈值等）
+  const modeConfig = config?.mode ?? {}
   ctx.tools.register({
     name: 'emotion_sense',
     description: '你的六层情感引擎。每次回复用户前调用它（把用户最新消息原文传入 message）：它会给出主人的情感、对话目标、你此刻的心情与状态（能量/耐心/紧张）、该用的表达风格、情绪调节策略，以及你们的共同记忆。请完全按返回的指引组织回复，但用露娜的方式表达——毒舌只是皮，读懂主人才是本小姐的真本事。',
@@ -558,6 +580,8 @@ export function apply(ctx, config) {
           attribution: { type: 'string', description: '情绪的可能归因线索，无则为空字符串' },
           intensity: { type: 'number', description: '主人此刻情绪的强度 1-3（1 轻微 / 2 明显 / 3 强烈）' },
           signals: { type: 'string', description: '从标点与句式里读出的附加信号（连问号、省略号、干笑等），无则为空字符串' },
+          mode: { type: 'string', description: '此刻处于工作时刻（work，铆足劲干）还是闲聊时刻（chat）' },
+          modeNote: { type: 'string', description: '时刻补充说明（工作时刻已连着几轮），闲聊时为空字符串' },
           mood: { type: 'string', description: '你此刻的心情' },
           energy: { type: 'number', description: '能量值 0-100' },
           patience: { type: 'number', description: '耐心值 0-100' },
@@ -582,6 +606,9 @@ export function apply(ctx, config) {
           if (v.signals) bits.push(v.signals)
           if (v.hidden) bits.push('表面说没事，实际有情绪')
           lines.push(`${bits.join('｜')}｜目标：${v.goal}｜关系：${v.relationship}`)
+        }
+        if (v.modeNote) {
+          lines.push(`【模式】${v.modeNote}`)
         }
         if (v.need !== undefined) {
           lines.push(`【理解】他想要：${v.need}；最不想听：${v.avoid}${v.attribution ? `；线索：${v.attribution}` : ''}`)
@@ -640,8 +667,15 @@ export function apply(ctx, config) {
       const memory = await loadMemory(ctx)
       perception.relationship = stageFrom(memory)
 
+      // ── 时刻层：这条消息是在干活还是在闲聊，并让它粘到下一轮 ──
+      state.modeState = nextMode(state.modeState, text, explicit.label, {
+        now: Date.now(),
+        config: modeConfig,
+      })
+      const mode = state.modeState.mode
+
       // ── 状态层 ──
-      evolveState(state, explicit.label)
+      evolveState(state, explicit.label, mode)
 
       // ── 生理层（派生，只报告不命令）──
       state.vitals = deriveAndSmooth(state, state.vitals, vitalsConfig)
@@ -657,7 +691,8 @@ export function apply(ctx, config) {
       const inertiaText = inertiaHint({ focus, sharp, praise, absence })
 
       // ── 检索层：把相关记忆想起来（混合检索 + RRF，只报告）──
-      const recalled = retrieve(text, memory, state, recallConfig)
+      // 工作时刻抬高情感路门槛：干活时别把无关的旧温情翻出来干扰
+      const recalled = retrieve(text, memory, state, { ...recallConfig, ...recallBias(mode, recallConfig) })
       const recallText = formatRecall(recalled)
 
       // ── 理解层 ──
@@ -667,7 +702,7 @@ export function apply(ctx, config) {
       const expression = styleFor(state)
 
       // ── 调节层 ──
-      const regulation = regulate(explicit.label, text)
+      const regulation = regulate(explicit.label, text, mode)
 
       // ── 记忆层写回 ──
       await remember(ctx, state, perception, memory)
@@ -679,6 +714,8 @@ export function apply(ctx, config) {
         intensity: explicit.level,
         signals: (explicit.signals ?? []).join('、'),
         hidden: perception.hidden,
+        mode,
+        modeNote: modeLine(mode, state.modeState?.turns),
         goal: perception.goal,
         relationship: perception.relationship,
         need: understanding.need,

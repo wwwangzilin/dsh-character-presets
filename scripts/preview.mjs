@@ -7,6 +7,7 @@
  */
 import { analyzeEmotion } from '../luna-emotion.mjs'
 import { deriveAndSmooth, describeVitals } from '../luna-vitals.mjs'
+import { nextMode } from '../luna-mode.mjs'
 
 const SAMPLES = [
   '我不开心',
@@ -51,4 +52,23 @@ for (const mood of moods) {
   }
   // 每档独立派生（不复用上一档的平滑结果），否则惯性会把差异抹平
   console.log(`${mood.padEnd(4, '　')} → ${describeVitals(deriveAndSmooth(state, null, {}))}`)
+}
+
+console.log('')
+console.log('时刻层（工作 / 闲聊的粘滞——注意「嗯」「继续」不打断干活）')
+console.log('─'.repeat(72))
+const CONVO = [
+  '帮我把那个备份脚本改一下',
+  '嗯',
+  '继续',
+  '好了吗',
+  '陪我聊会嘛',
+  '你在干嘛呀',
+]
+let ms = null
+let clock = 1_000_000
+for (const text of CONVO) {
+  ms = nextMode(ms, text, '平淡', { now: (clock += 60_000) })
+  const tag = ms.mode === 'work' ? '工作' : '闲聊'
+  console.log(`${text.padEnd(24, '　')} → ${tag.padEnd(4, '　')}（${ms.reason}）`)
 }
