@@ -72,6 +72,39 @@ test('emotion_sense 注册成功，schema 含生理层与惯性层', () => {
   assert.ok(props.memory, 'schema 应有 memory')
 })
 
+/**
+ * 这条测试是补出来的教训。
+ *
+ * 真实事故：往 execute 的返回值里加了 `secondary`（混合情绪的次情绪），
+ * 却忘了在 output.schema.properties 里声明它。schema 是
+ * `additionalProperties: false`——于是工具每次调用都被判为「输出不合法」，
+ * 整个 emotion_sense 直接罢工。而当时 180 项测试全绿，因为没有任何一条
+ * 检查过「返回的字段」和「声明的字段」是不是同一套。
+ */
+test('输出字段必须全部在 schema 里声明（多一个就会被拒）', async () => {
+  const { ctx, tools } = makeCtx()
+  apply(ctx)
+  const tool = tools[0]
+  const declared = new Set(Object.keys(tool.output.schema.properties))
+
+  // 用一句能触发混合情绪的话，尽量让可选字段都有值
+  const value = await tool.execute({ message: '真是气笑了，那个 bug 还没修' }, { agent: { id: 'agent-shape' } })
+
+  const extra = Object.keys(value).filter((k) => !declared.has(k))
+  assert.deepEqual(
+    extra,
+    [],
+    `这些字段没在 output.schema.properties 里声明，工具会被判为输出不合法：${extra.join('、')}`,
+  )
+  // 反向：每个返回的 key 都得是可序列化的基本类型，别塞对象进 schema 说 string 的位置
+  for (const [k, v] of Object.entries(value)) {
+    assert.ok(
+      v === null || ['string', 'number', 'boolean'].includes(typeof v),
+      `${k} 的类型是 ${typeof v}，schema 只声明了基本类型`,
+    )
+  }
+})
+
 test('inject 声明了记忆落盘所需的全部服务', () => {
   assert.ok(inject.includes('tools'), 'inject 应含 tools')
   assert.ok(inject.includes('fs'), 'inject 应含 fs')

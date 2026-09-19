@@ -672,6 +672,7 @@ export function apply(ctx, config) {
           attribution: { type: 'string', description: '情绪的可能归因线索，无则为空字符串' },
           intensity: { type: 'number', description: '主人此刻情绪的强度 1-3（1 轻微 / 2 明显 / 3 强烈）' },
           signals: { type: 'string', description: '从标点与句式里读出的附加信号（连问号、省略号、干笑等），无则为空字符串' },
+          secondary: { type: 'string', description: '混合情绪里的次情绪（「气笑了」→ 次情绪是开心），无则为空字符串' },
           mode: { type: 'string', description: '此刻处于工作时刻（work，铆足劲干）还是闲聊时刻（chat）' },
           modeNote: { type: 'string', description: '时刻补充说明（工作时刻已连着几轮），闲聊时为空字符串' },
           absence: { type: 'string', description: '你不在场那段时间她在干什么；间隔太短时为空字符串' },
