@@ -18,6 +18,7 @@ import { homedir } from 'node:os'
 
 /** Cordis plugin name used by loader diagnostics. */
 import { deriveAndSmooth, describeVitals } from './luna-vitals.mjs'
+import { analyzeEmotion, isHidden } from './luna-emotion.mjs'
 import {
   regressToBaseline, applyAbsence, noteSharpness, notePraise, detectFocus, inertiaHint,
 } from './luna-inertia.mjs'
@@ -41,36 +42,14 @@ export const inject = ['tools', 'fs', 'sandboxPolicy']
 
 /* ============================== 感知层 ============================== */
 
-/** 显性情绪：关键词命中数加权，取最高分。 */
-const EXPLICIT_RULES = [
-  {
-    label: '开心',
-    keywords: ['开心', '高兴', '哈哈', '太好', '棒', '嘻嘻', '嘿嘿', '耶', '万岁', '喜欢', '爱死', '超棒', '好耶', '愉快', '笑死'],
-  },
-  {
-    label: '难过',
-    keywords: ['难过', '伤心', '哭', '委屈', '呜呜', '唉', '悲伤', '沮丧', '失落', '心痛', '难受', '哭唧唧', '想哭', '撑不住', '好累', '累死了', '心累'],
-  },
-  {
-    label: '生气',
-    keywords: ['生气', '气死', '烦', '讨厌', '滚', '火大', '可恶', '气人', '烦躁', '恼火', '气炸', '凭什么', '太过分', '无语', '受够了'],
-  },
-  {
-    label: '焦虑',
-    keywords: ['急', '赶', '来不及', '怎么办', '慌', '焦虑', '担心', '紧张', '压力', '好慌', '来不及了', 'deadline', '悬', '心里没底'],
-  },
-  {
-    label: '撒娇',
-    keywords: ['喵', '嘛', '好不好', '求求', '撒娇', '蹭蹭', '摸摸', '抱抱', '亲亲', '撒娇娇', '陪我', '理我'],
-  },
-  {
-    label: '认真工作',
-    keywords: ['代码', '改', '写', '部署', '修', 'bug', '文件', '实现', '重构', '调试', '测试', '报错', '编译', '仓库', '分支', '提交', '接口', '数据库', '需求'],
-  },
-]
-
-/** 隐性情绪：口头上说没事/还好，但语境透出低落。 */
-const HIDDEN_MARKERS = ['没事', '还好', '随便', '无所谓', '算了', '别管我', '不用了', '没怎么样', '还行']
+/*
+ * 显性/隐性情绪表已抽到 luna-emotion.mjs。
+ * 原先这里的判据是「字面包含 + 按词长累加」，有三个必然会错的地方：
+ *   · 「我不开心」命中「开心」（长度 2）→ 判成开心
+ *   · 「哈哈哈哈」只命中「哈哈」一次 → 与「哈哈」同强度
+ *   · 「气笑了」两边的表都命中不了 → 掉成平淡
+ * 现在由感知层统一处理否定、强度分档、混合情绪与标点信号。
+ */
 
 /** 对话目标：从消息形态推断用户要什么。 */
 export function detectGoal(text, explicit) {
@@ -536,19 +515,13 @@ function recallSummary(memory) {
 
 /* ============================== 工具注册 ============================== */
 
-/** 显性情绪分析。 */
+/**
+ * 显性情绪分析。
+ * 判据全部委托 luna-emotion.mjs（否定 / 强度 / 混合情绪 / 标点信号），
+ * 这里只保留原来的对外签名，返回结构是它的超集，老调用方不受影响。
+ */
 export function analyze(text) {
-  const trimmed = String(text ?? '').trim()
-  if (trimmed.length === 0) return { label: '平淡', hits: [] }
-  let best = null
-  for (const rule of EXPLICIT_RULES) {
-    const hits = rule.keywords.filter(w => trimmed.includes(w))
-    if (hits.length === 0) continue
-    const score = hits.reduce((s, w) => s + w.length, 0)
-    if (best === null || score > best.score) best = { label: rule.label, hits, score }
-  }
-  if (best === null) return { label: '平淡', hits: [] }
-  return { label: best.label, hits: best.hits }
+  return analyzeEmotion(text)
 }
 
 export function apply(ctx, config) {
@@ -583,6 +556,8 @@ export function apply(ctx, config) {
           need: { type: 'string', description: '主人此刻真正想要的' },
           avoid: { type: 'string', description: '主人此刻最不想听到的' },
           attribution: { type: 'string', description: '情绪的可能归因线索，无则为空字符串' },
+          intensity: { type: 'number', description: '主人此刻情绪的强度 1-3（1 轻微 / 2 明显 / 3 强烈）' },
+          signals: { type: 'string', description: '从标点与句式里读出的附加信号（连问号、省略号、干笑等），无则为空字符串' },
           mood: { type: 'string', description: '你此刻的心情' },
           energy: { type: 'number', description: '能量值 0-100' },
           patience: { type: 'number', description: '耐心值 0-100' },
@@ -601,7 +576,12 @@ export function apply(ctx, config) {
         const v = value ?? {}
         const lines = []
         if (v.explicit !== undefined) {
-          lines.push(`【感知】主人${v.explicit}${v.hidden ? '（表面说没事，实际有情绪）' : ''}｜目标：${v.goal}｜关系：${v.relationship}`)
+          const bits = [`【感知】主人${v.explicit}`]
+          if (v.secondary) bits.push(`（混着${v.secondary}）`)
+          if (Number(v.intensity) >= 2) bits.push(`强度 ${v.intensity}/3`)
+          if (v.signals) bits.push(v.signals)
+          if (v.hidden) bits.push('表面说没事，实际有情绪')
+          lines.push(`${bits.join('｜')}｜目标：${v.goal}｜关系：${v.relationship}`)
         }
         if (v.need !== undefined) {
           lines.push(`【理解】他想要：${v.need}；最不想听：${v.avoid}${v.attribution ? `；线索：${v.attribution}` : ''}`)
@@ -640,7 +620,8 @@ export function apply(ctx, config) {
 
       // ── 感知层 ──
       const explicit = analyze(text)
-      const hidden = HIDDEN_MARKERS.some(m => text.includes(m))
+      // 口是心非：退让词 + 短句（「随便吧」「我没事」），但真心开心/撒娇时不算
+      const hidden = isHidden(text)
         && explicit.label !== '开心'
         && explicit.label !== '撒娇'
       const goal = detectGoal(text, explicit.label)
@@ -694,6 +675,9 @@ export function apply(ctx, config) {
       const moodDef = MOODS[state.mood] ?? MOODS.平淡
       return {
         explicit: perception.explicit,
+        secondary: explicit.secondary ?? '',
+        intensity: explicit.level,
+        signals: (explicit.signals ?? []).join('、'),
         hidden: perception.hidden,
         goal: perception.goal,
         relationship: perception.relationship,
