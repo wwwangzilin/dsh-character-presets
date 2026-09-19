@@ -186,21 +186,28 @@ export function deriveVitals(state = {}, config = {}) {
   const away = hoursSince(state, Number(config.now ?? Date.now()))
   const reunion = away !== null && away >= ABSENCE.hours ? ABSENCE.heartRate : 0
 
+  // 昼夜节律：困的时候什么都慢半拍。config.hour 由调用方给（纯函数不读系统时钟）
+  const rhythm = rhythmOf(config.hour)
+  const sleepy = rhythm?.sleepiness ?? 0
+
   const heartRate = baseline.heartRate
     + excitement * sensitivity.heartRate
     + offset.heartRate
     + reunion
+    - sleepy * 4
     + drift(bias, jitter.heartRate)
 
   const bodyTemp = baseline.bodyTemp
     + excitement * sensitivity.bodyTemp
     + offset.bodyTemp
+    - sleepy * 0.15
     + drift(bias, jitter.bodyTemp)
 
   const breath = baseline.breath
     + excitement * sensitivity.breath
     + offset.breath
     + strain * sensitivity.breath * 0.4
+    - sleepy * 3
     + drift(bias, jitter.breath)
 
   return {
@@ -209,6 +216,7 @@ export function deriveVitals(state = {}, config = {}) {
     breath: Math.round(breath),
     mood,
     intensity: intensityOf(state),
+    rhythm,
   }
 }
 
@@ -234,6 +242,67 @@ export function deriveAndSmooth(state, prev, config = {}) {
   const target = deriveVitals(state, config)
   const inertia = config.inertia ?? VITALS_DEFAULTS.inertia
   return smoothVitals(prev, target, inertia)
+}
+
+/* ------------------------------- 昼夜节律 --------------------------------- */
+
+/**
+ * 昼夜节律：同样的心情，凌晨三点和下午三点不是一回事。
+ *
+ * 这是全套里最便宜的真实感来源——它不需要任何记忆或状态，
+ * 只要一个钟点，就能让「今天的她」和「昨天同一时刻的她」不一样。
+ *
+ * @param {number} hour 0-23（超出范围自动绕回）
+ * @returns {{ hour:number, sleepiness:number, hunger:number, label:string } | null}
+ */
+export function rhythmOf(hour) {
+  const raw = Number(hour)
+  if (!Number.isFinite(raw)) return null
+  const h = ((raw % 24) + 24) % 24
+
+  // 困倦：凌晨硬撑区，上午最清醒，午后一个小坑
+  let sleepiness
+  if (h < 5) sleepiness = 0.9
+  else if (h < 7) sleepiness = 0.6      // 被吵醒
+  else if (h < 9) sleepiness = 0.3      // 刚醒
+  else if (h < 12) sleepiness = 0.05    // 最清醒
+  else if (h < 14) sleepiness = 0.35    // 午后困
+  else if (h < 18) sleepiness = 0.1
+  else if (h < 22) sleepiness = 0.3
+  else sleepiness = 0.65
+
+  // 饥饿：按饭点走，饭前最饿
+  let hunger
+  if (h >= 6 && h < 9) hunger = 0.3
+  else if (h < 12) hunger = 0.6
+  else if (h < 14) hunger = 0.7
+  else if (h < 18) hunger = 0.5
+  else if (h < 20) hunger = 0.75
+  else hunger = 0.35
+
+  const label = h < 5 ? '深夜' : h < 9 ? '清晨' : h < 12 ? '上午'
+    : h < 14 ? '中午' : h < 18 ? '下午' : h < 22 ? '傍晚' : '夜里'
+
+  return { hour: h, sleepiness, hunger, label }
+}
+
+/** 节律带来的那一条体感（困优先于饿，一次只出一条）。 */
+export function rhythmSensation(rhythm) {
+  if (!rhythm || typeof rhythm !== 'object') return ''
+  if (Number(rhythm.sleepiness) >= 0.6) return '眼皮发沉'
+  if (Number(rhythm.hunger) >= 0.7) return '肚子在叫'
+  if (Number(rhythm.sleepiness) >= 0.3) return '打了个哈欠'
+  return ''
+}
+
+/** 节律的注入文本。 */
+export function rhythmLine(hour) {
+  const r = rhythmOf(hour)
+  if (r === null) return ''
+  if (r.sleepiness >= 0.6) return `${r.label}：你困得眼睛发涩，脑子转不太动（想不想硬撑，你自己决定）`
+  if (r.hunger >= 0.7) return `${r.label}：你饿了，肚子一直在叫`
+  if (r.sleepiness >= 0.3) return `${r.label}：你有点乏，提不太起劲`
+  return ''
 }
 
 /* ------------------------------- 词汇化输出 -------------------------------- */
@@ -313,14 +382,18 @@ export function describeVitals(v, opts = {}) {
 
   // 体温只在真的偏离常态时才提——36.5℃ 这种「正常」不值得占字
   const tw = tempWord(v.bodyTemp)
-  const extras = tw === '体温正常' ? body : [...body, tw]
+  const extras = tw === '体温正常' ? [...body] : [...body, tw]
+  // 节律体感排最后，且整体最多三条——再多就成一串报了
+  const rhythmNote = rhythmSensation(v.rhythm)
+  if (rhythmNote) extras.push(rhythmNote)
+  const picked = extras.slice(0, 3)
 
   // 心率呼吸都在常态、又没有别的可说：合并成一句，别写成「平稳，平稳」
-  if (!showNumber && hw === '平稳' && bw === '平稳' && extras.length === 0) {
+  if (!showNumber && hw === '平稳' && bw === '平稳' && picked.length === 0) {
     return '心跳和呼吸都很稳'
   }
 
-  return [heart, ...extras, `呼吸${bw}`].filter(Boolean).join('，')
+  return [heart, ...picked, `呼吸${bw}`].filter(Boolean).join('，')
 }
 
 /* --------------------------------- helpers -------------------------------- */

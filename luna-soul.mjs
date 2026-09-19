@@ -20,8 +20,12 @@ import { homedir } from 'node:os'
 import { deriveAndSmooth, describeVitals } from './luna-vitals.mjs'
 import { analyzeEmotion, isHidden } from './luna-emotion.mjs'
 import { WORK_GUARD, WORK_TIPS, WORK_STYLE, modeLine, nextMode, recallBias } from './luna-mode.mjs'
+import { absenceLine, isLongAbsence } from './luna-offline.mjs'
+import { dueLoop, loopLine, markAsked, mergeLoops } from './luna-loops.mjs'
+import { SIBLING_FILE, readRecords, siblingLine, touchRecord } from './luna-siblings.mjs'
 import {
   regressToBaseline, applyAbsence, noteSharpness, notePraise, detectFocus, inertiaHint,
+  accrueDebt, decayDebt, debtHint,
 } from './luna-inertia.mjs'
 import {
   createMemory, emptyMemory, stageFromMemory, summarize,
@@ -82,6 +86,92 @@ export function detectGoal(text, explicit) {
 /** 关系阶段：委托 v2 记忆模块（阶段名与 v1 保持一致）。 */
 function stageFrom(memory) {
   return stageFromMemory(memory)
+}
+
+/**
+ * 主人现在在哪个项目里。
+ * 从工作区路径取最后一段——她不需要知道绝对路径，只需要能说「又是这个」。
+ */
+function projectLabel(ctx) {
+  try {
+    const root = ctx.get('sandboxPolicy')?.workspaceRoot
+    if (typeof root !== 'string' || root.length === 0) return ''
+    const parts = root.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean)
+    return parts[parts.length - 1] ?? ''
+  } catch {
+    return ''
+  }
+}
+
+/* --------------------------- 姐妹层：跨 preset 的记录 --------------------------- */
+
+/** 自己是谁：从本模块所在目录名推断（…/.agent-presets/luna/luna-soul.mjs → luna）。 */
+const SELF_ID = (() => {
+  try {
+    const parts = import.meta.url.split('/').filter(Boolean)
+    return decodeURIComponent(parts[parts.length - 2] ?? 'luna')
+  } catch {
+    return 'luna'
+  }
+})()
+
+/** 三位核心角色的显示名；别的 id 就直接用 id。 */
+const SIBLING_NAMES = { luna: '露娜', nekomode: '小喵', michiyo: '三千代' }
+
+/** 写入节流：这层是锦上添花，没必要每轮都落盘。 */
+const SIBLING_WRITE_INTERVAL_MS = 5 * 60_000
+let siblingCache = null
+let siblingTouchedAt = 0
+
+/**
+ * 记一笔「我还在」，顺便读回别人的记录。
+ *
+ * 全程 try/catch：那个文件在 preset 目录**之外**，沙箱多半不许写。
+ * 这一层缺了不影响任何别的功能，所以失败就安静返回 null。
+ */
+async function touchSiblings(now) {
+  if (siblingCache !== null && now - siblingTouchedAt < SIBLING_WRITE_INTERVAL_MS) {
+    return siblingCache
+  }
+  try {
+    const { readFile, writeFile, mkdir } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const home = process.env.DSH_HOME || join(homedir(), '.dsh')
+    const dir = join(home, '.agent-presets')
+    const file = join(dir, SIBLING_FILE)
+
+    let records = {}
+    try {
+      records = readRecords(await readFile(file, 'utf8'))
+    } catch {
+      // 第一次运行、或读不到——都当空表处理
+    }
+    const next = touchRecord(records, SELF_ID, SIBLING_NAMES[SELF_ID] ?? SELF_ID, now)
+    await mkdir(dir, { recursive: true })
+    await writeFile(file, `${JSON.stringify(next, null, 2)}\n`, 'utf8')
+
+    siblingCache = next
+    siblingTouchedAt = now
+    return next
+  } catch {
+    siblingCache = {}
+    siblingTouchedAt = now
+    return null
+  }
+}
+
+/**
+ * 记忆模糊：小概率在**注入层**给回忆加一句「记不太清」。
+ *
+ * 铁律：只改注入文本，绝不写回存储。否则就变成真的记错了——
+ * 而「偶尔记岔，被纠正后恼羞成怒」才是想要的反差萌。
+ */
+function maybeFuzzy(recallText, seed) {
+  const t = String(recallText ?? '')
+  if (t.length < 12 || !/\d/.test(t)) return t
+  const roll = Math.abs(Math.imul(Number(seed) || 1, 0x9e3779b1) | 0) % 100
+  if (roll >= 15) return t
+  return `${t}\n（这段记得有点糊，细节别太当真）`
 }
 
 /* ============================== 理解层 ============================== */
@@ -215,6 +305,8 @@ function stateFor(agent) {
       sharpWindow: [],     // 惯性层：毒舌预算窗口
       praiseStreak: 0,     // 惯性层：傲娇累积（连续被夸）
       modeState: null,     // 时刻层：工作 / 闲聊的粘滞状态（见 luna-mode.mjs）
+      loops: [],           // 牵挂层：还没了结的事（见 luna-loops.mjs）
+      debt: null,          // 惯性层：情感债（上一轮的气还没消）
     }
     if (agent !== undefined) stateByAgent.set(agent, state)
   }
@@ -582,6 +674,12 @@ export function apply(ctx, config) {
           signals: { type: 'string', description: '从标点与句式里读出的附加信号（连问号、省略号、干笑等），无则为空字符串' },
           mode: { type: 'string', description: '此刻处于工作时刻（work，铆足劲干）还是闲聊时刻（chat）' },
           modeNote: { type: 'string', description: '时刻补充说明（工作时刻已连着几轮），闲聊时为空字符串' },
+          absence: { type: 'string', description: '你不在场那段时间她在干什么；间隔太短时为空字符串' },
+          loop: { type: 'string', description: '你一直记着的、主人还没了结的一件事；没有则为空字符串' },
+          debt: { type: 'string', description: '情感债：上一轮的情绪还没消；气已消则为空字符串' },
+          project: { type: 'string', description: '主人当前所在的项目/目录名；取不到则为空字符串' },
+          sibling: { type: 'string', description: '别的角色最近陪过主人多久之前（你会吃醋但别刻薄）；没人来过则为空字符串' },
+          opening: { type: 'string', description: '开场提示：这一轮该由你先开口；不需要则为空字符串' },
           mood: { type: 'string', description: '你此刻的心情' },
           energy: { type: 'number', description: '能量值 0-100' },
           patience: { type: 'number', description: '耐心值 0-100' },
@@ -609,6 +707,21 @@ export function apply(ctx, config) {
         }
         if (v.modeNote) {
           lines.push(`【模式】${v.modeNote}`)
+        }
+        if (v.project) {
+          lines.push(`【场景】主人在「${v.project}」这边忙`)
+        }
+        if (v.absence) {
+          lines.push(`【不在场】${v.absence}`)
+        }
+        if (v.opening) {
+          lines.push(`【开场】${v.opening}`)
+        }
+        if (v.loop) {
+          lines.push(`【牵挂】${v.loop}`)
+        }
+        if (v.sibling) {
+          lines.push(`【姐妹】${v.sibling}`)
         }
         if (v.need !== undefined) {
           lines.push(`【理解】他想要：${v.need}；最不想听：${v.avoid}${v.attribution ? `；线索：${v.attribution}` : ''}`)
@@ -673,12 +786,33 @@ export function apply(ctx, config) {
         config: modeConfig,
       })
       const mode = state.modeState.mode
+      const nowMs = Date.now()
+
+      // ── 不在场层：你没看她的时候她在干什么（同一间隔内恒定，不会每轮变）──
+      // 读的是**上一轮的** lastSeenMs，等下面 applyAbsence 跑完才刷新
+      const absenceText = absenceLine(state.lastSeenMs, nowMs)
+      const longGap = isLongAbsence(state.lastSeenMs, nowMs)
+
+      // ── 牵挂层：先记下这轮有没有新的没完事、有没有了结的 ──
+      const loopMerge = mergeLoops(state.loops, text, nowMs, config?.loops ?? {})
+      state.loops = loopMerge.loops
 
       // ── 状态层 ──
       evolveState(state, explicit.label, mode)
 
+      // ── 牵挂层（下半）：冷却够了才主动问一句 ──
+      const loopAsk = dueLoop(state.loops, { turns: state.turns, now: nowMs, mode, config: config?.loops ?? {} })
+      if (loopAsk !== null) state.loops = markAsked(state.loops, loopAsk.text)
+      const loopText = loopLine(loopAsk)
+
+      // ── 情感债：先消一点（气是慢慢消的），再看这轮要不要续账 ──
+      decayDebt(state)
+      accrueDebt(state, explicit.label, explicit.level, inertiaConfig)
+      const debtText = debtHint(state)
+
       // ── 生理层（派生，只报告不命令）──
-      state.vitals = deriveAndSmooth(state, state.vitals, vitalsConfig)
+      // hour 由这里注入：纯函数模块不读系统时钟，测试才好写
+      state.vitals = deriveAndSmooth(state, state.vitals, { ...vitalsConfig, hour: new Date(nowMs).getHours() })
       const vitalsText = describeVitals(state.vitals)
 
       // ── 惯性层（时间维度 + 人格一致性，同样只报告）──
@@ -687,8 +821,8 @@ export function apply(ctx, config) {
       const sharp = noteSharpness(state, state.mood, inertiaConfig)
       const praise = notePraise(state, text, inertiaConfig)
       const focus = detectFocus(text, inertiaConfig)
-      state.lastSeenMs = Date.now()
-      const inertiaText = inertiaHint({ focus, sharp, praise, absence })
+      state.lastSeenMs = nowMs
+      const inertiaText = inertiaHint({ focus, sharp, praise, absence, debt: debtText })
 
       // ── 检索层：把相关记忆想起来（混合检索 + RRF，只报告）──
       // 工作时刻抬高情感路门槛：干活时别把无关的旧温情翻出来干扰
@@ -708,6 +842,17 @@ export function apply(ctx, config) {
       await remember(ctx, state, perception, memory)
 
       const moodDef = MOODS[state.mood] ?? MOODS.平淡
+
+      // ── 场景层：她在哪儿、你在忙什么、这是不是刚开场 ──
+      const projectName = projectLabel(ctx)
+      // 姐妹层：写失败也没关系，锦上添花而已（沙箱可能不许碰 preset 目录之外）
+      const siblingText = siblingLine(await touchSiblings(nowMs), SELF_ID, nowMs)
+      const openingNote = state.turns <= 2
+        ? (longGap
+            ? '主人隔了很久才回来，第一句由你开口——可以损他一句，但别真抱怨'
+            : '这一轮由你先开口说第一句，别干等着他')
+        : ''
+
       return {
         explicit: perception.explicit,
         secondary: explicit.secondary ?? '',
@@ -716,6 +861,12 @@ export function apply(ctx, config) {
         hidden: perception.hidden,
         mode,
         modeNote: modeLine(mode, state.modeState?.turns),
+        absence: absenceText,
+        loop: loopText,
+        debt: debtText,
+        project: projectName,
+        sibling: siblingText,
+        opening: openingNote,
         goal: perception.goal,
         relationship: perception.relationship,
         need: understanding.need,
@@ -732,7 +883,7 @@ export function apply(ctx, config) {
         memory: recallSummary(memory),
         vitals: vitalsText,
         inertia: inertiaText,
-        recall: recallText,
+        recall: maybeFuzzy(recallText, state.turns),
       }
     },
   })

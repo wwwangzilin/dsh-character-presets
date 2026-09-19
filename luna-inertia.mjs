@@ -37,6 +37,18 @@ export const INERTIA_DEFAULTS = {
   sharp: { window: 10, budget: 6 },
   /** 连续被夸到这个次数，就欠一句真心话 */
   praise: { streakForTruth: 3 },
+  /**
+   * 情感债：强度够的负面情绪会挂账，接下来几轮带余温。
+   * 气是慢慢消的，不是开关——这是「她一直在那里」最关键的一半。
+   */
+  debt: {
+    /** 触发挂账的最低强度（1-3） */
+    threshold: 3,
+    /** 每种情绪挂几轮 */
+    turns: { 生气: 4, 委屈: 3, 难过: 3, 焦虑: 3 },
+    /** 未列出的负面情绪挂几轮 */
+    defaultTurns: 2,
+  },
 }
 
 /** 夸奖信号（主人说的这些，会累积她的「傲娇值」）。 */
@@ -119,7 +131,56 @@ export function notePraise(state, text, config = {}) {
   return { streak: Number(state.praiseStreak ?? 0), owesTruth, threshold: cfg.streakForTruth }
 }
 
-/* ============================ 5. 反差触发条件 ============================== */
+/* ============================== 5. 情感债 ================================== */
+
+/** 会挂账的情绪。 */
+const NEGATIVE_MOODS = ['生气', '委屈', '难过', '焦虑']
+
+/**
+ * 这一轮的情绪是否该挂账（或续账）。
+ *
+ * 强度不够就不挂——「有点烦」是过眼云烟，「烦死了」才值得记几轮。
+ * 同一种情绪再次上头会**续账**（取更长的那个），换了情绪就盖掉旧的。
+ *
+ * @returns {{ mood:string, level:number, turnsLeft:number } | null}
+ */
+export function accrueDebt(state, explicit, intensity, config = {}) {
+  const cfg = { ...INERTIA_DEFAULTS.debt, ...(config.debt ?? {}) }
+  const level = Number(intensity) || 1
+  if (!NEGATIVE_MOODS.includes(explicit) || level < cfg.threshold) return null
+
+  const rounds = cfg.turns?.[explicit] ?? cfg.defaultTurns
+  const prev = state.debt
+  const prevLeft = prev && prev.mood === explicit ? Number(prev.turnsLeft) || 0 : 0
+  state.debt = { mood: explicit, level, turnsLeft: Math.max(prevLeft, rounds) }
+  return state.debt
+}
+
+/**
+ * 每轮消耗一点。到零就清了——但清的那一轮值得说一下。
+ * @returns {{ mood:string, turnsLeft:number, justCleared:boolean } | null}
+ */
+export function decayDebt(state) {
+  const d = state?.debt
+  if (!d || typeof d !== 'object') return null
+  const left = (Number(d.turnsLeft) || 0) - 1
+  if (left <= 0) {
+    state.debt = null
+    return { mood: d.mood, turnsLeft: 0, justCleared: true }
+  }
+  state.debt = { ...d, turnsLeft: left }
+  return { mood: d.mood, turnsLeft: left, justCleared: false }
+}
+
+/** 把情感债说成一行事实。 */
+export function debtHint(state) {
+  const d = state?.debt
+  if (!d || typeof d !== 'object') return ''
+  const label = { 生气: '那口气还没消', 委屈: '还觉得委屈', 难过: '还没缓过来', 焦虑: '心里还悬着' }[d.mood] ?? '还带着情绪'
+  return `余温：上一轮的${d.mood}${label}，你还记着（再过 ${d.turnsLeft} 轮才淡下去）——这轮可以带一点，但别迁怒`
+}
+
+/* ============================ 6. 反差触发条件 ============================== */
 
 /** 只有任务关键词出现，才切专注模式。 */
 export function detectFocus(text, config = {}) {
@@ -136,7 +197,10 @@ export function detectFocus(text, config = {}) {
  * 按「最该被看见的一件事」排序，只报一条，避免刷屏。
  */
 export function inertiaHint(parts) {
-  const { focus, sharp, praise, absence } = parts ?? {}
+  const { focus, sharp, praise, absence, debt } = parts ?? {}
+
+  // 情绪优先于一切：主人惹完你还没消气的时候，「他在工作」不该盖过这一条
+  if (typeof debt === 'string' && debt.length > 0) return debt
 
   if (focus?.focus) {
     return `主人这一轮在正经工作（命中：${focus.hits.slice(0, 3).join('、')}）——反差触发条件已满足`
