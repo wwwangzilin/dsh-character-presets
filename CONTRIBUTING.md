@@ -1,90 +1,89 @@
 # 贡献指南
 
-露娜欢迎改造 —— 但请先读这三条设计原则，它们决定了什么改动会被接受。
+本仓库接受功能、文档与测试方面的改动。以下约束决定改动是否会被接受。
 
-## 三条原则
+## 三条设计原则
 
-1. **角色与引擎解耦**：`luna-soul.mjs` 是通用引擎，不放露娜专属内容；露娜的性格只出现在 `agent.cordis.yml` 的 `persona.text` 与 `luna-soul.mjs` 的 `MOODS` / 关键词表里。
-2. **规则可复现**：情绪识别、状态迁移、边界策略必须是可读的规则代码，**不要**把它们交给模型即兴发挥。模型只该拿到结论与表达指引。
-3. **只报告，不命令**：注入的是「事实」（如「你此刻心跳 112」），不是命令（如「你现在应该害羞」）。角色怎么反应由角色自己决定。
+1. **角色与引擎解耦**：`luna-soul.mjs` 是通用引擎，不包含任何角色专属内容；角色差异只出现在 `agent.cordis.yml` 的 persona 文本与 `luna-soul.mjs` 的 `MOODS` / 关键词表中。
+2. **规则可复现**：情绪识别、状态迁移与边界策略必须由可读的规则代码实现，不交给模型即兴判断。模型只接收结论与表达指引。
+3. **只报告，不命令**：注入内容是事实描述（如「心跳 112」），不是行为指令（如「你现在应该害羞」）。角色的反应由角色自行决定。
 
-违反这三条的 PR 会被要求改写，不是因为你写得不好，而是它们会让同一句话今天温柔明天冷淡。
+与这三条冲突的改动会在评审中要求修改，原因是它们会破坏同一输入在相同状态下的一致性。
 
-## 本地跑起来
+## 本地开发
 
 ```bash
-git clone https://github.com/wwwangzilin/dsh-character-presets.git ~/.dsh/.agent-presets/luna
-# 重启 DSH → 新建会话时选「露娜模式」
+git clone https://github.com/wwwangzilin/dsh-character-presets.git ~/dsh-character-presets
+cd ~/dsh-character-presets
+npm install                       # 仅用于测试依赖 js-yaml
+dsh plugin add .                  # 装进当前 profile
 ```
 
-改完 `agent.cordis.yml` / `luna-soul.mjs` 后重启 DSH 即可生效（预设是启动时装载的）。
-
-想边改边看？把目录换成你自己工作区里的 clone，编辑后重启一次 DSH 就能验。
+预设于启动时装载，修改后需重启 DSH；`dsh plugin add` 重新执行即可加载最新改动。
 
 ## 自测清单
 
-提交前请逐条确认：
+提交前逐条确认：
 
-- [ ] `node --check luna-soul.mjs` 通过（语法）
-- [ ] `jq . cards/luna.card.json` 通过（角色卡是合法 JSON）
-- [ ] 改了 `agent.cordis.yml` 的话：新会话能正常起（preset 选择器里出现「露娜模式」且能选中）
-- [ ] 改了 `persona.text` 的话：毒舌层与专注模式的切换仍然成立（正经工作时不许卖萌干扰）
-- [ ] 改了 `MOODS` / 关键词表的话：`emotion_sense` 的返回值仍然是一屏精简文本，没有变成长篇大论
-- [ ] `.luna-heart.json` 的 schema 若有改动：`version` 字段已递增，并在 PR 里说明迁移方式
+- [ ] `node --check luna-soul.mjs` 通过
+- [ ] `node scripts/sync-bundle.mjs --check` 通过（`cordis.patch.yml` 与源一致）
+- [ ] `node --test` 全部通过
+- [ ] `cards/luna.card.json` 为合法 JSON
+- [ ] 修改 `agent.cordis.yml` 后：新会话能正常启动，预设出现在选择器中且可选
+- [ ] 修改 persona 后：工作模式与闲聊模式的切换仍然成立
+- [ ] 修改 `MOODS` 或关键词表后：`emotion_sense` 的返回值仍为一屏精简文本
+- [ ] 若改动 `.luna-heart.json` 结构：`version` 字段已递增，PR 中说明迁移方式
 
-## 提 PR
+## 提交 PR
 
-1. Fork → 开分支（`feat/xxx`、`fix/xxx`、`docs/xxx`）
-2. 改动尽量**单一主题**，别把「加个口头禅」和「重构引擎」混在一个 PR
-3. PR 描述里写清楚：**改了什么 / 为什么 / 怎么验证的**
-4. 涉及人设的改动，附一段改动前后的实际对话对比（截图或文本都行）—— 这是最有说服力的证据
+1. Fork 并新建分支（`feat/xxx`、`fix/xxx`、`docs/xxx`）。
+2. 单个 PR 只包含一个主题，不混合功能改动与重构。
+3. PR 描述中写明改动内容、原因与验证方式。
+4. 涉及人设的改动请附改动前后的实际对话文本；涉及组合的改动请附 `--dump-config` 的相关片段。
 
-## 加一门新语言
+## 新增语言
 
-`persona/<lang>.md` 是人设的唯一事实源：
+`persona/<lang>.md` 是人设的事实源：
 
-1. 复制 `persona/en.md` 为 `persona/<lang>.md`，整段翻译——**保留** `{{model}}` / `{{cwd}}` 占位符与【】段落结构
-2. `node scripts/use-persona.mjs <lang>` 注入，重启 DSH 验证
-3. PR 里附一段该语言的真实对话（最有说服力的证据）
+1. 复制 `persona/en.md` 为 `persona/<lang>.md` 并完整翻译，保留 `{{model}}` / `{{cwd}}` 占位符与【】段落结构；
+2. 执行 `node scripts/use-persona.mjs <lang>` 注入，重启 DSH 验证；
+3. PR 中附一段该语言的实际对话。
 
-现成语言：`zh` / `ja` / `en`。加语言**不需要**改引擎，也不要往 `luna-soul.mjs` 里塞语言分支。
+当前语言：`zh` / `ja` / `en`。新增语言不需要修改引擎。
 
-## 加一个新角色（不用改引擎）
+## 新增角色
 
-引擎与角色解耦，所以新角色就是「复制目录 + 换 persona」：
+引擎与角色解耦，新增角色即「复制目录 + 替换 persona」，步骤见 [persona-template/README.md](persona-template/README.md)：
 
-1. 复制本仓库到自己的工作目录，改 `package.json` 的 `dsh.preset`（`id` / `name` / `description`）
-2. 改 `agent.cordis.yml` 的 `persona` 行的 `prefix`（或用 `scripts/use-persona.mjs` 注入 `persona/<lang>.md`）
-3. `node scripts/sync-bundle.mjs` 重新生成 `cordis.patch.yml`（**不要手改那个文件**）
-4. 改 `luna-soul.mjs` 里 `MOODS` 的风格与示例句、关键词表（可选）
-5. `dsh plugin add .` 装进 profile，重启后在选择器里验证
+1. 复制仓库到工作目录，修改 `package.json` 的 `dsh.preset`（`id` / `name` / `description`）；
+2. 修改 `agent.cordis.yml` 中 persona 行的 `prefix`，或通过 `scripts/use-persona.mjs` 注入；
+3. 执行 `node scripts/sync-bundle.mjs` 重新生成 `cordis.patch.yml`；
+4. 按需修改 `MOODS` 与关键词表；
+5. `dsh plugin add .` 后在选择器中验证。
 
-> 也欢迎把新角色作为独立仓库发布，README 里注明「引擎来自 dsh-character-presets」即可。
+角色也可以作为独立仓库发布，在 README 中注明引擎来源。
 
 ## DSH 0.2 之后的安装形态
 
-本仓库不再往 `<dshHome>/.agent-presets/<id>/` 放目录——那条路径已经没人读了。现在它就是一个
-普通插件包：
+本仓库不再向 `<dshHome>/.agent-presets/<id>/` 写入目录，该路径在 0.2 起不再被读取。当前结构为普通插件包：
 
 ```jsonc
 {
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },      // 装上去的那一层
-    "preset": { "id": "luna", "name": "露娜模式", "description": "…" }  // 选择器里的元信息
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "preset": { "id": "luna", "name": "露娜模式", "description": "…" }
   }
 }
 ```
 
-`cordis.patch.yml` 里是一条 `@deepseek-ai/dsh-agent-preset` 行，它的 `config.plugins` 就是
-`agent.cordis.yml` 的正文（整体缩进后原样搬过去）。所以人改 `agent.cordis.yml`，机器维护
-`cordis.patch.yml`，两者不一致时 `npm test` 会失败。
+`cordis.patch.yml` 包含一条 `@deepseek-ai/dsh-agent-preset` 行，其 `config.plugins` 为 `agent.cordis.yml` 的正文。人工维护 `agent.cordis.yml`，`cordis.patch.yml` 由脚本生成；两者不一致时 `npm test` 失败。
 
 ## 不接受的改动
 
-- 把情感判断改成「让模型自己判断情绪」
-- 为了讨好用户而破坏人设一致性（例如让露娜在正经工作时也长篇卖萌）
-- 在 preset 里引入新的运行时依赖（本 preset 只用 DSH 内置插件）
-- 提交任何人的 `.luna-heart.json`（那是私人聊天痕迹，已在 `.gitignore`）
+- 将情感判断改为由模型自行决定
+- 为迎合用户而破坏人设一致性（例如在工作模式下使用长篇卖萌表达）
+- 引入新的运行时依赖（本预设仅使用 DSH 内置插件）
+- 提交任何人的 `.luna-heart.json`
 
 ## 行为准则
 
