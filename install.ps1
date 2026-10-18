@@ -6,20 +6,23 @@
 #
 # Environment overrides:
 #   DSH_HOME          DSH home directory (default %USERPROFILE%\.dsh)
-#   DSH_PRESETS_DIR   presets directory (default $DSH_HOME\.agent-presets)
-#   LUNA_REPO         source repository (default this repo on GitHub)
-#   LUNA_REF          branch or tag (default main)
+#   DSH_PRESET_DIR    where the plugin package is copied (default $DSH_HOME\presets\luna)
+#   DSH_PRESET_REPO   source repository (default this repo on GitHub)
+#   DSH_PRESET_REF    branch or tag (default main)
+#
+# Since DSH 0.2 an agent preset is a bundle patch, not a directory under
+# .agent-presets: this script fetches the plugin package and hands it to
+# `dsh plugin add`, the official install path.
 #
 # Output is intentionally ASCII: Windows PowerShell 5.1 decodes BOM-less
 # script files with the ANSI code page, so non-ASCII text can garble.
 
 $ErrorActionPreference = 'Stop'
 
-$Repo = if ($env:LUNA_REPO) { $env:LUNA_REPO } else { 'https://github.com/wwwangzilin/dsh-character-presets.git' }
-$Ref = if ($env:LUNA_REF) { $env:LUNA_REF } else { 'main' }
+$Repo = if ($env:DSH_PRESET_REPO) { $env:DSH_PRESET_REPO } else { 'https://github.com/wwwangzilin/dsh-character-presets.git' }
+$Ref = if ($env:DSH_PRESET_REF) { $env:DSH_PRESET_REF } else { 'main' }
 $DshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $env:USERPROFILE '.dsh' }
-$PresetsDir = if ($env:DSH_PRESETS_DIR) { $env:DSH_PRESETS_DIR } else { Join-Path $DshHome '.agent-presets' }
-$Target = Join-Path $PresetsDir 'luna'
+$Target = if ($env:DSH_PRESET_DIR) { $env:DSH_PRESET_DIR } else { Join-Path (Join-Path $DshHome 'presets') 'luna' }
 
 Write-Host 'Luna preset - install'
 Write-Host "  repo    : $Repo ($Ref)"
@@ -29,33 +32,35 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     throw 'git not found on PATH - install git first'
 }
 
-if ((Test-Path $Target) -and -not (Test-Path (Join-Path $Target '.git'))) {
-    throw "$Target exists and is not a git checkout - move it away, or point DSH_PRESETS_DIR elsewhere"
-}
+$Tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("dsh-preset-" + [guid]::NewGuid().ToString('N'))
+git clone --depth 1 --branch $Ref $Repo $Tmp
+if ($LASTEXITCODE -ne 0) { throw 'git clone failed' }
 
-New-Item -ItemType Directory -Path $PresetsDir -Force | Out-Null
+$Manifest = Join-Path $Tmp 'package.json'
+if (-not (Test-Path $Manifest)) { throw "package.json missing in $Repo ($Ref)" }
+$Pkg = Get-Content $Manifest -Raw | ConvertFrom-Json
+if (-not $Pkg.dsh.bundle.patch) { throw "$Ref is not an installable bundle (package.json has no dsh.bundle)" }
 
-if (Test-Path (Join-Path $Target '.git')) {
-    Write-Host '  -> already installed, updating'
-    git -C $Target fetch --depth 1 origin $Ref
-    git -C $Target checkout -q $Ref 2>$null
-    git -C $Target pull --ff-only origin $Ref
-} else {
-    git clone --depth 1 --branch $Ref $Repo $Target
-}
-
-if ((Split-Path $Target -Leaf) -ne 'luna') { throw "directory must be named 'luna' (got '$(Split-Path $Target -Leaf)')" }
-foreach ($f in @('preset.yml', 'agent.cordis.yml')) {
-    if (-not (Test-Path (Join-Path $Target $f))) { throw "incomplete install: $f missing" }
-}
+New-Item -ItemType Directory -Path (Split-Path $Target -Parent) -Force | Out-Null
+if (Test-Path $Target) { Remove-Item -Recurse -Force $Target }
+Copy-Item -Recurse -Force $Tmp $Target
+Remove-Item -Recurse -Force (Join-Path $Target '.git') -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force $Tmp -ErrorAction SilentlyContinue
 
 Write-Host ''
-Write-Host "OK - Luna installed at $Target" -ForegroundColor Green
+Write-Host "OK - plugin package at $Target" -ForegroundColor Green
+Write-Host "  preset: $($Pkg.dsh.preset.name)"
+Write-Host ''
+Write-Host 'Installing into the current profile with the official CLI...'
+dsh plugin add $Target
+if ($LASTEXITCODE -ne 0) {
+    throw "dsh plugin add failed - run it yourself: dsh plugin add `"$Target`""
+}
+
 Write-Host ''
 Write-Host 'Next:'
 Write-Host '  1. restart DSH'
-Write-Host '  2. new session -> pick "Luna" in the preset selector'
+Write-Host '  2. new session -> pick the preset in the selector'
 Write-Host '     (or set it as default under Settings -> Agent presets)'
 Write-Host ''
-Write-Host 'Uninstall: delete the folder above. Her memory file (.luna-heart.json)'
-Write-Host 'lives in the workspace or $DSH_HOME - delete that too to reset the bond.'
+Write-Host 'Memory file: $DSH_HOME\.luna-heart.json - delete it to reset the bond.'

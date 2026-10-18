@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # 露娜模式 · 一键安装
 #
-# 把 dsh-character-presets 装进 DeepSeek Harness 的 agent-presets 目录。
+# DSH 0.2 起，agent preset 不再是一个放在 `.agent-presets/<id>/` 里的目录，而是一条
+# bundle patch 里的 `@deepseek-ai/dsh-agent-preset` 行。所以本脚本做两件事：取插件包 →
+# 交给官方 CLI `dsh plugin add`。
 #
 #   curl -fsSL https://raw.githubusercontent.com/wwwangzilin/dsh-character-presets/main/install.sh | bash
 #   # 或
@@ -9,16 +11,15 @@
 #
 # 可覆盖的环境变量：
 #   DSH_HOME          DSH 主目录（默认 ~/.dsh）
-#   DSH_PRESETS_DIR   预设目录（默认 $DSH_HOME/.agent-presets）
-#   LUNA_REPO         源仓库（默认 GitHub 上的本仓库）
-#   LUNA_REF          分支 / tag（默认 main）
+#   DSH_PRESET_DIR    插件包落地目录（默认 $DSH_HOME/presets/luna）
+#   DSH_PRESET_REPO   源仓库（默认 GitHub 上的本仓库）
+#   DSH_PRESET_REF    分支 / tag（默认 main）
 set -euo pipefail
 
-REPO="${LUNA_REPO:-https://github.com/wwwangzilin/dsh-character-presets.git}"
-REF="${LUNA_REF:-main}"
+REPO="${DSH_PRESET_REPO:-https://github.com/wwwangzilin/dsh-character-presets.git}"
+REF="${DSH_PRESET_REF:-main}"
 DSH_HOME_DIR="${DSH_HOME:-$HOME/.dsh}"
-PRESETS_DIR="${DSH_PRESETS_DIR:-$DSH_HOME_DIR/.agent-presets}"
-TARGET="$PRESETS_DIR/luna"
+TARGET="${DSH_PRESET_DIR:-$DSH_HOME_DIR/presets/luna}"
 
 say() { printf '%s\n' "$*"; }
 die() { printf '✗ %s\n' "$*" >&2; exit 1; }
@@ -29,35 +30,41 @@ say "  安装到 : $TARGET"
 
 command -v git >/dev/null 2>&1 || die "未找到 git，请先安装 git"
 
-if [ -e "$TARGET" ] && [ ! -d "$TARGET/.git" ]; then
-  die "$TARGET 已存在且不是 git 仓库 —— 请先移走它，或改用 DSH_PRESETS_DIR 指定别处"
-fi
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
 
-mkdir -p "$PRESETS_DIR"
+git clone --depth 1 --branch "$REF" "$REPO" "$TMP/repo" || die "git clone 失败"
+[ -f "$TMP/repo/package.json" ] || die "仓库里没有 package.json"
+grep -q '"bundle"' "$TMP/repo/package.json" || die "$REF 分支还不是可安装的插件包（package.json 缺 dsh.bundle）"
 
-if [ -d "$TARGET/.git" ]; then
-  say "  → 已安装过，执行更新"
-  git -C "$TARGET" fetch --depth 1 origin "$REF"
-  git -C "$TARGET" checkout -q "$REF" 2>/dev/null || true
-  git -C "$TARGET" pull --ff-only origin "$REF"
-else
-  git clone --depth 1 --branch "$REF" "$REPO" "$TARGET"
-fi
+mkdir -p "$(dirname "$TARGET")"
+rm -rf "$TARGET"
+cp -R "$TMP/repo" "$TARGET"
+rm -rf "$TARGET/.git"
 
-# DSH 用目录名作为 preset id，必须叫 luna
-[ "$(basename "$TARGET")" = "luna" ] || die "目录名必须是 luna（当前：$(basename "$TARGET")）"
-[ -f "$TARGET/preset.yml" ] || die "安装不完整：缺少 preset.yml"
-[ -f "$TARGET/agent.cordis.yml" ] || die "安装不完整：缺少 agent.cordis.yml"
+PRESET_NAME="$(sed -n 's/.*"name": "\(.*\)",\{0,1\}/\1/p' "$TARGET/package.json" | sed -n '2p')"
 
 cat <<EOF
 
-✅ 露娜已就位（$TARGET）
+✅ 插件包已就位：$TARGET
+   preset：${PRESET_NAME:-luna}
+
+正在通过官方 CLI 安装到当前 profile…
+EOF
+
+if ! command -v dsh >/dev/null 2>&1; then
+  die "PATH 里没有 dsh —— 装好后手动执行：dsh plugin add \"$TARGET\""
+fi
+dsh plugin add "$TARGET" || die "dsh plugin add 失败"
+
+cat <<EOF
+
+✅ 完成
 
 下一步：
   1. 重启 DSH
   2. 新建会话 → preset 选择器里选「露娜模式」
      或「设置 → Agent 预设」把它设为默认，之后每个新会话都由她来跑
 
-换 DSH 目录？先设置 DSH_HOME（或 DSH_PRESETS_DIR）再重跑本脚本。
-卸载：删掉 $TARGET 即可（她的记忆文件 .luna-heart.json 在工作区或 \$DSH_HOME 下，一并删掉即重置关系）。
+记忆文件：\$DSH_HOME/.luna-heart.json（删掉即重置关系）。
 EOF

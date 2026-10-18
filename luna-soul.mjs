@@ -116,7 +116,7 @@ const SELF_ID = (() => {
 })()
 
 /** 三位核心角色的显示名；别的 id 就直接用 id。 */
-const SIBLING_NAMES = { luna: '露娜', nekomode: '小喵', michiyo: '三千代' }
+const SIBLING_NAMES = { luna: '露娜' }
 
 /** 写入节流：这层是锦上添花，没必要每轮都落盘。 */
 const SIBLING_WRITE_INTERVAL_MS = 5 * 60_000

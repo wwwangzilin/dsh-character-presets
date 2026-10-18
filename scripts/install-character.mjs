@@ -1,41 +1,31 @@
-#!/usr/bin/env node
-/**
- * install-character.mjs —— 把 characters/<id>/ 里的角色装成一个 DSH agent preset。
- *
- *   node scripts/install-character.mjs list              # 看有哪些角色
- *   node scripts/install-character.mjs install <id>       # 装到 ~/.dsh/.agent-presets/<id>
- *   node scripts/install-character.mjs install --all      # 全装
- *   node scripts/install-character.mjs card <id>          # 生成 cards/<id>.card.json（chara_card_v2）
- *
- * 设计要点：**引擎与角色解耦**。引擎模块（luna-*.mjs）原样复制，角色差异全部落在
- * persona 文本、preset.yml 元信息与角色卡里 —— 所以加角色永远不需要改引擎。
- */
-import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
-const CHARACTERS_DIR = join(ROOT, 'characters')
-const CARDS_DIR = join(ROOT, 'cards')
 
-/** 被复制的引擎模块（与角色无关，原样搬运）。 */
+/** 被复制的引擎模块：露娜的六层情感引擎 + 记忆系统，与角色无关，原样搬运。 */
 const ENGINE_FILES = [
-  'luna-soul.mjs', 'luna-memory.mjs', 'luna-gate.mjs',
-  'luna-recall.mjs', 'luna-forget.mjs', 'luna-vitals.mjs', 'luna-inertia.mjs',
+  'luna-soul.mjs', 'luna-emotion.mjs', 'luna-vitals.mjs', 'luna-inertia.mjs',
+  'luna-mode.mjs', 'luna-offline.mjs', 'luna-loops.mjs', 'luna-siblings.mjs',
+  'luna-memory.mjs', 'luna-gate.mjs', 'luna-recall.mjs', 'luna-forget.mjs',
 ]
 
 const readJson = async (p) => JSON.parse(await readFile(p, 'utf8'))
 const say = (msg) => console.log(msg)
 
 async function loadCatalog() {
-  return readJson(join(CHARACTERS_DIR, 'characters.json'))
+  return readJson(join(ROOT, 'characters', 'characters.json'))
 }
 
-/** 找一个 id 的元数据；找不到就列出可选项后退出。 */
 async function requireMeta(id) {
+  if (id === undefined) {
+    const catalog = await loadCatalog()
+    say(`缺少角色 id。\n可用：${catalog.characters.map((c) => c.id).join(', ')}`)
+    process.exit(1)
+  }
   const catalog = await loadCatalog()
   const meta = catalog.characters.find((c) => c.id === id)
   if (meta === undefined) {
@@ -45,9 +35,29 @@ async function requireMeta(id) {
   return meta
 }
 
+/** 可选：多角色合集（extras）带过来的引擎模块，原样覆盖。 */
+async function engineSource(sourceDir) {
+  if (sourceDir === undefined) return null
+  const dir = resolve(sourceDir)
+  if (!existsSync(join(dir, 'luna-soul.mjs'))) {
+    say(`--engine 指向的目录里没有 luna-soul.mjs：${dir}`)
+    process.exit(1)
+  }
+  return dir
+}
+
+/** 把生成出来的插件包拷到 --out（默认就在 dist/<id>，不拷）。 */
+async function copyOut(from, out) {
+  const to = resolve(out)
+  if (to === from) return to
+  await rm(to, { recursive: true, force: true })
+  await cp(from, to, { recursive: true })
+  return to
+}
+
 /**
- * 把 agent.cordis.yml 里的 `prefix: |-` 块整段换成新的 persona。
- * 只动那一段 —— 其余（工具、shell、emotion 插件挂载等）原样保留。
+ * 把 agent.cordis.yml 里 `prefix: |-` 整段换成新角色的人设。只动那一段——
+ * 工具面、引擎挂载等全部原样保留，所以加角色永远不用碰工具配置。
  */
 export function replacePersonaPrefix(yaml, personaText) {
   const lines = yaml.split(/\r?\n/)
@@ -57,128 +67,99 @@ export function replacePersonaPrefix(yaml, personaText) {
   const bodyIndent = `${baseIndent}  `
   let end = start + 1
   while (end < lines.length && (lines[end].trim() === '' || lines[end].startsWith(bodyIndent))) end += 1
-  const block = personaText.trimEnd().split(/\r?\n/).map((line) => (line.trim() === '' ? '' : bodyIndent + line))
+  const block = personaText
+    .trimEnd()
+    .split(/\r?\n/)
+    .map((line) => (line.trim() === '' ? '' : bodyIndent + line))
   return [...lines.slice(0, start + 1), ...block, ...lines.slice(end)].join('\n')
 }
 
-/** 从 persona 文本里抠出一段（【身份】到下一个【】之前）。 */
-function section(personaText, name) {
-  const re = new RegExp(`【${name}】([\\s\\S]*?)(?=\\n【|$)`)
-  const m = re.exec(personaText)
-  return m === null ? '' : m[1].trim()
+/** 换掉 persona 之后，把同一层里紧跟其后的其它配置键（如 emotion 段）留在原处。 */
+function setPresetMeta(meta, patchYaml) {
+  const id = meta.id
+  const name = meta.presetName ?? meta.displayName ?? id
+  const description = meta.description ?? meta.tagline ?? ''
+  const escaped = description.replace(/'/g, "''")
+  return patchYaml
+    .replace(/(- id: preset-)[\w-]+/, `$1${id}`)
+    .replace(/^(\s+)id: (?!preset)[\w-]+$/m, `$1id: ${id}`)
+    .replace(/^(\s+)name: 露娜模式$/m, `$1name: ${name}`)
+    .replace(/^(\s+)description: '.*'$/m, `$1description: '${escaped}'`)
 }
 
-/** 由 persona + 元数据生成 chara_card_v2。 */
-export function buildCard(meta, personaText) {
-  const identity = section(personaText, '身份')
-  const persona = section(personaText, '人设')
-  const behaviours = section(personaText, '行为模式')
-  return {
-    spec: 'chara_card_v2',
-    spec_version: '2.0',
-    data: {
-      name: meta.displayName,
-      description: `${meta.tagline}。\n\n${identity}\n\n⚠️ 本卡片只是人设精简版：**不含** luna-soul.mjs 六层情感引擎与 DSH 工具链。完整角色请用 DSH + dsh-character-presets。`,
-      personality: `${persona}\n\n行为模式：\n${behaviours}`,
-      scenario: `你在用户的工作目录里陪着他。日常按上面的人设相处；一旦他进入正经工作（编码 / 调试 / 部署 / 写文档），自动收敛成可靠的技术搭档。`,
-      first_mes: `（${meta.tagline}）\n\n……嗯，我在这里。有什么要做的？`,
-      mes_example: meta.catchphrases.map((line) => `<START>\n{{char}}: ${line}`).join('\n\n'),
-      creator_notes: `源于 DeepSeek Harness 的 agent preset「${meta.presetName}」。\n本卡片为精简人设版，供 SillyTavern / RisuAI 等前端使用；完整版（六层情感引擎）见 https://github.com/wwwangzilin/dsh-character-presets`,
-      system_prompt: `你现在的完整人设如下，请严格保持：\n\n${personaText.trim()}`,
-      post_history_instructions: '',
-      alternate_greetings: [],
-      tags: [...meta.tags, '中文'],
-      creator: 'wwwangzilin',
-      character_version: '1.0.0',
-      extensions: {
-        'dsh-luna-preset': {
-          homepage: 'https://github.com/wwwangzilin/dsh-character-presets',
-          character_id: meta.id,
-          accent: meta.accent,
-          full_engine: 'luna-soul.mjs（六层情感引擎，仅 DSH 预设提供）',
-          card_scope: 'persona + examples only',
-        },
-      },
-    },
-  }
-}
-
-/** 找引擎模块的来源目录：优先本机已装的 luna preset，其次仓库根。 */
-function engineSource(homeDir) {
-  const installed = join(homeDir, '.agent-presets', 'luna')
-  if (existsSync(join(installed, 'luna-soul.mjs'))) return installed
-  if (existsSync(join(ROOT, 'luna-soul.mjs'))) return ROOT
-  throw new Error('找不到引擎模块：请先安装 luna preset，或在仓库根执行')
-}
-
-async function install(id, homeDir) {
+async function install(id, outDir, engineDir) {
   const meta = await requireMeta(id)
-  const personaText = await readFile(join(CHARACTERS_DIR, id, 'persona.md'), 'utf8')
-  const source = engineSource(homeDir)
-  const target = join(homeDir, '.agent-presets', id)
+  const personaText = await readFile(join(ROOT, 'characters', id, 'persona.md'), 'utf8')
+  const target = join(ROOT, 'dist', id)
+  const engine = await engineSource(engineDir)
+
+  await rm(target, { recursive: true, force: true })
   await mkdir(target, { recursive: true })
 
-  // 1. 引擎模块原样复制（角色差异不体现在引擎里）。
   for (const file of ENGINE_FILES) {
-    await cp(join(source, file), join(target, file)).catch(() => {})
+    await cp(join(ROOT, file), join(target, file))
+  }
+  if (engine !== null) {
+    for (const file of await readdir(engine)) {
+      if (/^luna-.*\.mjs$/.test(file)) await cp(join(engine, file), join(target, file))
+    }
   }
 
-  // 2. agent.cordis.yml：照抄 luna 的，只把 persona 那一段换掉。
-  const baseYml = join(source, 'agent.cordis.yml')
-  if (existsSync(baseYml)) {
-    const yaml = await readFile(baseYml, 'utf8')
-    await writeFile(join(target, 'agent.cordis.yml'), replacePersonaPrefix(yaml, personaText), 'utf8')
-  } else {
-    throw new Error(`缺少模板 ${baseYml} —— 先装好 luna preset 再装角色`)
+  const yaml = await readFile(join(ROOT, 'agent.cordis.yml'), 'utf8')
+  await writeFile(join(target, 'agent.cordis.yml'), replacePersonaPrefix(yaml, personaText), 'utf8')
+
+  // 角色包自己的清单与补丁：与仓库根同一套生成物，只是人设和元信息换了。
+  const pkg = await readJson(join(ROOT, 'package.json'))
+  pkg.name = `dsh-character-preset-${id}`
+  delete pkg.repository
+  delete pkg.bin
+  pkg.files = [
+    'agent.cordis.yml', 'cordis.patch.yml', ...ENGINE_FILES,
+    'cards/', 'characters/', 'persona/', 'rules/', 'NOTICE',
+  ]
+  pkg.dsh.preset = {
+    id,
+    name: meta.presetName ?? meta.displayName,
+    description: meta.description ?? meta.tagline,
+    order: (pkg.dsh.preset.order ?? 2) + 1,
   }
+  delete pkg.scripts.build
 
-  // 3. preset.yml：选择器里显示的名字与描述。
-  const presetYml = `name: ${meta.presetName}\ndescription: ${meta.description}\n`
-  await writeFile(join(target, 'preset.yml'), presetYml, 'utf8')
+  const patch = setPresetMeta(
+    meta,
+    await readFile(join(ROOT, 'cordis.patch.yml'), 'utf8'),
+  )
+  await writeFile(join(target, 'package.json'), `${JSON.stringify(pkg, null, 2)}\n`, 'utf8')
+  await writeFile(join(target, 'cordis.patch.yml'), patch, 'utf8')
 
-  // 4. 顺带把角色卡写进仓库 cards/（前端与 GAL 共用同一份）。
-  await mkdir(CARDS_DIR, { recursive: true })
-  const cardPath = join(CARDS_DIR, `${id}.card.json`)
-  await writeFile(cardPath, `${JSON.stringify(buildCard(meta, personaText), null, 2)}\n`, 'utf8')
-
-  say(`[ok] ${meta.displayName} → ${target}`)
-  say(`     引擎: ${source}`)
-  say(`     角色卡: ${cardPath}`)
+  say(`[ok] ${meta.displayName} → ${outDir === undefined ? target : await copyOut(target, outDir)}`)
+  say(`     下一步：dsh plugin add <上面那个目录>`)
+  return target
 }
 
 async function main() {
   const [command, arg] = process.argv.slice(2)
-  const homeDir = process.env.DSH_HOME && process.env.DSH_HOME.length > 0 ? process.env.DSH_HOME : homedir()
+  const flag = (name) => {
+    const i = process.argv.indexOf(`--${name}`)
+    return i === -1 ? undefined : process.argv[i + 1]
+  }
 
   if (command === 'list' || command === undefined) {
     const catalog = await loadCatalog()
     say('可用角色：')
     for (const c of catalog.characters) say(`  ${c.id.padEnd(10)} ${c.displayName}　${c.tagline}`)
-    say('\n用法：node scripts/install-character.mjs install <id> | install --all | card <id>')
+    say('\n用法：node scripts/install-character.mjs build <id> [--out <dir>]')
+    say('其余角色：git checkout extras && node scripts/install-character.mjs list')
     return
   }
 
-  if (command === 'install') {
-    const catalog = await loadCatalog()
-    const ids = arg === '--all' ? catalog.characters.map((c) => c.id) : [arg]
-    if (!arg) { say('用法：install <id> 或 install --all'); process.exit(1) }
-    for (const id of ids) await install(id, homeDir)
-    say('\n装完记得重启 DSH，新角色才会出现在选择器里。')
+  if (command === 'build') {
+    await install(arg, flag('out'), flag('engine'))
     return
   }
 
-  if (command === 'card') {
-    const meta = await requireMeta(arg)
-    const personaText = await readFile(join(CHARACTERS_DIR, arg, 'persona.md'), 'utf8')
-    await mkdir(CARDS_DIR, { recursive: true })
-    const cardPath = join(CARDS_DIR, `${arg}.card.json`)
-    await writeFile(cardPath, `${JSON.stringify(buildCard(meta, personaText), null, 2)}\n`, 'utf8')
-    say(`[ok] ${cardPath}`)
-    return
-  }
-
-  const files = await readdir(CHARACTERS_DIR).catch(() => [])
-  say(`未知命令：${command}\n角色目录：${files.filter((f) => f !== 'README.md' && f !== 'characters.json').join(', ')}`)
+  say(`未知命令：${command}`)
+  say('用法：node scripts/install-character.mjs list | build <id> [--out <dir>] [--engine <extras仓库>]')
   process.exit(1)
 }
 

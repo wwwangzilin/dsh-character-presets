@@ -53,13 +53,31 @@ git clone https://github.com/wwwangzilin/dsh-character-presets.git ~/.dsh/.agent
 
 引擎与角色解耦，所以新角色就是「复制目录 + 换 persona」：
 
-1. 复制本仓库为 `~/.dsh/.agent-presets/<你的角色 id>`
-2. 改 `preset.yml` 的 `name` / `description`
-3. 改 `agent.cordis.yml` 的 `persona.text`
+1. 复制本仓库到自己的工作目录，改 `package.json` 的 `dsh.preset`（`id` / `name` / `description`）
+2. 改 `agent.cordis.yml` 的 `persona` 行的 `prefix`（或用 `scripts/use-persona.mjs` 注入 `persona/<lang>.md`）
+3. `node scripts/sync-bundle.mjs` 重新生成 `cordis.patch.yml`（**不要手改那个文件**）
 4. 改 `luna-soul.mjs` 里 `MOODS` 的风格与示例句、关键词表（可选）
-5. 目录名就是 preset id，必须与 `preset.yml` 的名字对应
+5. `dsh plugin add .` 装进 profile，重启后在选择器里验证
 
 > 也欢迎把新角色作为独立仓库发布，README 里注明「引擎来自 dsh-character-presets」即可。
+
+## DSH 0.2 之后的安装形态
+
+本仓库不再往 `<dshHome>/.agent-presets/<id>/` 放目录——那条路径已经没人读了。现在它就是一个
+普通插件包：
+
+```jsonc
+{
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },      // 装上去的那一层
+    "preset": { "id": "luna", "name": "露娜模式", "description": "…" }  // 选择器里的元信息
+  }
+}
+```
+
+`cordis.patch.yml` 里是一条 `@deepseek-ai/dsh-agent-preset` 行，它的 `config.plugins` 就是
+`agent.cordis.yml` 的正文（整体缩进后原样搬过去）。所以人改 `agent.cordis.yml`，机器维护
+`cordis.patch.yml`，两者不一致时 `npm test` 会失败。
 
 ## 不接受的改动
 

@@ -1,32 +1,57 @@
 {
   "name": "dsh-character-presets",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "露娜模式 —— DeepSeek Harness 的雌小鬼 agent preset（小恶魔人设 + 六层情感引擎，能力等同内置 standard）",
   "type": "module",
-  "scripts": {
-    "test": "node --test"
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "preset": {
+      "id": "luna",
+      "name": "露娜模式",
+      "description": "魔界小恶魔露娜（Luna）的完整编码 Agent，雌小鬼人设——毒舌「杂鱼~」、爱恶作剧、嘴硬到底、被反杀就怂；沿用六层情感系统并按角色微调；保留文件编辑、Shell、检索、Skills、计划、目标、子代理与工作流全部能力。",
+      "order": 2
+    }
   },
-  "bin": {
-    "dsh-character-presets": "bin/install.mjs"
+  "scripts": {
+    "test": "node --test",
+    "build": "node scripts/sync-bundle.mjs",
+    "check": "node scripts/sync-bundle.mjs --check && node --test"
   },
   "files": [
+    "agent.cordis.yml",
     "bin/",
+    "cards/",
+    "characters/",
+    "cordis.patch.yml",
     "install.sh",
     "install.ps1",
-    "preset.yml",
-    "agent.cordis.yml",
+    "luna-forget.mjs",
+    "luna-gate.mjs",
+    "luna-inertia.mjs",
+    "luna-loops.mjs",
+    "luna-memory.mjs",
+    "luna-mode.mjs",
+    "luna-offline.mjs",
+    "luna-recall.mjs",
+    "luna-siblings.mjs",
     "luna-soul.mjs",
-    "cards/",
-    "README.md",
-    "LICENSE",
-    "NOTICE"
+    "luna-vitals.mjs",
+    "persona/",
+    "rules/",
+    "scripts/",
+    "NOTICE",
+    "README.md"
   ],
   "keywords": [
     "deepseek-harness",
     "dsh",
+    "dsh-plugin",
     "agent-preset",
     "persona",
-    "roleplay"
+    "roleplay",
+    "emotion-engine"
   ],
   "license": "MIT",
   "repository": {
