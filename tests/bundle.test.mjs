@@ -9,8 +9,9 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { load as parseYaml } from 'js-yaml'
 
-import { build, bodyOf, render } from '../scripts/sync-bundle.mjs'
+import { BODY_INDENT, build, bodyOf, render } from '../scripts/sync-bundle.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (file) => readFile(join(ROOT, file), 'utf8')
@@ -24,11 +25,11 @@ test('正文缩进后仍是合法的列表续行（YAML 对缩进敏感）', asy
   const body = bodyOf(source)
   for (const line of body.split('\n')) {
     if (line.trim() === '') continue
-    assert.ok(line.startsWith('        '), `正文行缩进不足：${line.slice(0, 40)}`)
+    assert.ok(line.startsWith(BODY_INDENT), `正文行缩进不足：${line.slice(0, 40)}`)
   }
-  // 每一条顶层插件行（- id: ...）都跟着一条同样缩进的 name:。
-  const rows = body.split('\n').filter((line) => /^        - id: /.test(line))
-  const names = body.split('\n').filter((line) => /^          name: /.test(line))
+  // 每一条顶层插件行（- id: ...）都跟着一条更深一档的 name:。
+  const rows = body.split('\n').filter((line) => line.startsWith(`${BODY_INDENT}- id: `))
+  const names = body.split('\n').filter((line) => line.startsWith(`${BODY_INDENT}  name: `))
   assert.ok(rows.length > 10, `顶层插件行只有 ${rows.length} 条`)
   assert.ok(names.length >= rows.length, '有插件行没有 name')
 })
@@ -57,6 +58,27 @@ test('清单声明的文件与模块都在仓库里', async () => {
   for (const match of source.matchAll(/name: '\.\/([\w.-]+)'/g)) {
     assert.ok(existsSync(join(ROOT, match[1])), `相对路径插件不存在：${match[1]}`)
   }
+})
+
+test('生成的补丁是合法 YAML，且正文挂在 group 的 config 下面', async () => {
+  // js-yaml 不认识 Loader 的 `!!js` 标签，预处理成普通字符串即可——这里校验的是缩进，
+  // 不是标签。第一次生成时正是缩进不够，被 Loader 的 YAMLException 打回来的。
+  const raw = (await read('cordis.patch.yml')).replace(/!!js( .*)?/g, "'js'")
+  const doc = parseYaml(raw)
+  const row = doc[0].insert[0]
+  assert.equal(row.name, '@deepseek-ai/dsh-agent-preset')
+  const groups = row.config.plugins.filter((entry) => entry.name === 'cordis:group')
+  assert.equal(groups.length, 1, 'preset 应该只有一个顶层 group，避免各行的 realm 泄漏')
+  const rows = groups[0].config
+  assert.ok(Array.isArray(rows) && rows.length > 10, '正文行没有挂到 group.config 下')
+  assert.ok(rows.every((entry) => typeof entry.id === 'string' && typeof entry.name === 'string'))
+  // 与 agent.cordis.yml 逐行对上：顺序、id、名字都不能漂。
+  const source = await read('agent.cordis.yml')
+  const expected = [...source.matchAll(/^- id: ([\w-]+)\n {2}name: (.+)$/gm)].map((m) => [
+    m[1],
+    m[2].trim().replace(/^'|'$/g, ''),
+  ])
+  assert.deepEqual(rows.map((entry) => [entry.id, entry.name]), expected)
 })
 
 test('不再生成已废弃的 .agent-presets 目录式 preset', async () => {
