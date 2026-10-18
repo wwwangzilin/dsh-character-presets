@@ -1,6 +1,6 @@
 {
   "name": "dsh-character-presets",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "露娜模式 —— DeepSeek Harness 的雌小鬼 agent preset（小恶魔人设 + 六层情感引擎，能力等同内置 standard）",
   "type": "module",
   "dsh": {
@@ -60,5 +60,8 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-agent-preset": ">=0.1.0-rc.1"
   }
 }
