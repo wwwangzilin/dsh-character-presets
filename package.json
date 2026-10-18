@@ -66,5 +66,10 @@
   },
   "devDependencies": {
     "js-yaml": "^5.5.0"
+  },
+  "exports": {
+    ".": "./luna-soul.mjs",
+    "./*": "./*",
+    "./package.json": "./package.json"
   }
 }

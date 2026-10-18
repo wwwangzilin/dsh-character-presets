@@ -11,7 +11,7 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { load as parseYaml } from 'js-yaml'
 
-import { BODY_INDENT, build, bodyOf, render } from '../scripts/sync-bundle.mjs'
+import { BODY_INDENT, PACKAGE_NAME, build, bodyOf, render } from '../scripts/sync-bundle.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (file) => readFile(join(ROOT, file), 'utf8')
@@ -72,13 +72,15 @@ test('生成的补丁是合法 YAML，且正文挂在 group 的 config 下面', 
   const rows = groups[0].config
   assert.ok(Array.isArray(rows) && rows.length > 10, '正文行没有挂到 group.config 下')
   assert.ok(rows.every((entry) => typeof entry.id === 'string' && typeof entry.name === 'string'))
-  // 与 agent.cordis.yml 逐行对上：顺序、id、名字都不能漂。
+  // 与 agent.cordis.yml 逐行对上：顺序、id、名字都不能漂（相对路径已改写成包名路径）。
   const source = await read('agent.cordis.yml')
   const expected = [...source.matchAll(/^- id: ([\w-]+)\n {2}name: (.+)$/gm)].map((m) => [
     m[1],
-    m[2].trim().replace(/^'|'$/g, ''),
+    m[2].trim().replace(/^'|'$/g, '').replace(/^\.\//, `${PACKAGE_NAME}/`),
   ])
   assert.deepEqual(rows.map((entry) => [entry.id, entry.name]), expected)
+  // 包内模块必须走包名路径：相对路径会按 profile 目录解析，那里没有这些文件。
+  assert.ok(!/name: '\.\//.test(raw), '补丁里还有没改写的相对路径')
 })
 
 test('不再生成已废弃的 .agent-presets 目录式 preset', async () => {

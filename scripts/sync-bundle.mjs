@@ -27,6 +27,8 @@ const ROOT = join(HERE, '..')
 
 export const SOURCE = 'agent.cordis.yml'
 export const TARGET = 'cordis.patch.yml'
+/** 自己这个包的包名：正文里的相对路径要改写成 `<包名>/<文件名>`。 */
+export const PACKAGE_NAME = 'dsh-character-presets'
 /**
  * 正文在 cordis.patch.yml 里的缩进。
  *
@@ -66,6 +68,24 @@ export function bodyOf(source, indent = BODY_INDENT) {
     .replace(/\n+$/, '')
 }
 
+/**
+ * 把 `name: './x.mjs'` 改写成 `name: 'dsh-character-presets/x.mjs'`。
+ *
+ * 相对路径换不来依赖：bundle patch 生效后，`./luna-soul.mjs` 会按 profile 目录
+ * （或宿主安装目录）解析，而不是按本包目录——实测 `dsh plugin add` 装完，
+ * 组合里的名字原样是 `./luna-soul.mjs`，那个文件在 profile 根下并不存在。
+ * 写成包名路径，解析走的是包的 exports（见 package.json 的 "./*"）。
+ */
+export function rewriteRelativeNames(text) {
+  return text
+    .split('\n')
+    .map((line) => {
+      const m = /^(\s*name:\s*)\.\/([^'\s]+)\s*$/.exec(line)
+      return m === null ? line : m[1] + "'" + PACKAGE_NAME + '/' + m[2] + "'"
+    })
+    .join('\n')
+}
+
 /** 生成完整的 cordis.patch.yml。 */
 export function render(meta, source) {
   const preset = meta.dsh.preset ?? {}
@@ -77,7 +97,7 @@ export function render(meta, source) {
   const order = Number.isInteger(preset.order) ? `\n        order: ${preset.order}` : ''
   // description 用 YAML 单引号标量：里面的单引号写成 ''，其余字符原样保留。
   const description = `'${preset.description.replace(/'/g, "''")}'`
-  return `${HEADER}- insert:
+  return rewriteRelativeNames(`${HEADER}- insert:
     - id: preset-${preset.id}
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -89,8 +109,7 @@ export function render(meta, source) {
             name: cordis:group
             group: true
             config:
-${bodyOf(source)}
-`
+${bodyOf(source)}`)
 }
 
 export async function build(root = ROOT) {

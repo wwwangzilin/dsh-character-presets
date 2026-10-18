@@ -53,7 +53,7 @@
                 # 再按返回的露娜毒舌风格建议组织输出。本地插件注册进本预设的工具目录，
                 # 不发布任何服务，因此无需 realm；preset 卸载时自动移除。
                 - id: tool-emotion
-                  name: ./luna-soul.mjs
+                  name: 'dsh-character-presets/luna-soul.mjs'
 
                 # ── shell ───────────────────────────────────────────────────────────────────
 
